@@ -17,6 +17,12 @@ type Workspace struct {
 	Mocks        []Mock        `json:"mocks"`
 	Apis         []Api         `json:"apis"`
 }
+type WorkspaceListResponse struct {
+	Workspaces []Workspace `json:"workspaces"`
+}
+type WorkspaceResponse struct {
+	Workspace Workspace `json:"workspace"`
+}
 
 type Collection struct {
 	ID   string `json:"id"`
