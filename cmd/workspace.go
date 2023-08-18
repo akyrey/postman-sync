@@ -4,12 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
 
 	"github.com/spf13/cobra"
-
-	"github.com/akyrey/postman-sync/pkg/keyring"
-	"github.com/akyrey/postman-sync/pkg/postman"
 )
 
 var (
@@ -38,7 +34,6 @@ The workspace retrieved is the one with the same uuid as the argument passed`,
 		Long:  `Delete the workspace with the given uuid`,
 		RunE:  rm,
 	}
-	pm *postman.Postman
 
 	ErrMissingUuid error = errors.New("uuid argument missing")
 )
@@ -49,13 +44,6 @@ func init() {
 	workspaceCmd.AddCommand(lsCmd)
 	workspaceCmd.AddCommand(getCmd)
 	workspaceCmd.AddCommand(rmCmd)
-
-	item, err := keyring.Store.Get("api-key")
-	if err != nil {
-		os.Exit(1)
-	}
-
-	pm = &postman.Postman{ApiKey: string(item.Data)}
 }
 
 func ls(_ *cobra.Command, _ []string) error {

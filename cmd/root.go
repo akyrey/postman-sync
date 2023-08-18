@@ -8,9 +8,14 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/akyrey/postman-sync/pkg/keyring"
+	"github.com/akyrey/postman-sync/pkg/postman"
 )
 
-var cfgFile string
+var (
+	cfgFile       string
+	defaultApiKey string
+	pm            *postman.Postman
+)
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -21,9 +26,9 @@ The first thing to do is set your API Key, generating one from https://blog.post
 	// Always check if API Key has been defined
 	PersistentPreRun: func(cmd *cobra.Command, _ []string) {
 		if cmd.Parent().Name() != "apiKey" {
-			_, err := keyring.Store.Get("api-key")
+			_, err := getApiKey()
 			if err != nil {
-				fmt.Println("Unable to find API Key in local key store. Use `postman-sync apiKey set` to set one")
+				fmt.Println("Unable to find API Key. Use `postman-sync apiKey set` to set one or use the command with --apiKey")
 				os.Exit(1)
 			}
 		}
@@ -40,13 +45,14 @@ func Execute() {
 }
 
 func init() {
-	cobra.OnInitialize(initConfig)
+	cobra.OnInitialize(initConfig, initPostman)
 
 	// Here you will define your flags and configuration settings.
 	// Cobra supports persistent flags, which, if defined here,
 	// will be global for your application.
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.postman-sync.yaml)")
+	rootCmd.PersistentFlags().StringVar(&defaultApiKey, "apiKey", "", "api-key that will be used for all requests")
 
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
@@ -75,4 +81,26 @@ func initConfig() {
 	if err := viper.ReadInConfig(); err == nil {
 		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
 	}
+}
+
+func initPostman() {
+	apiKey, err := getApiKey()
+	if err != nil {
+		os.Exit(1)
+	}
+
+	pm = &postman.Postman{ApiKey: apiKey}
+}
+
+func getApiKey() (string, error) {
+	if defaultApiKey != "" {
+		return defaultApiKey, nil
+	}
+
+	item, err := keyring.Store.Get("api-key")
+	if err != nil {
+		return "", err
+	}
+
+	return string(item.Data), nil
 }
