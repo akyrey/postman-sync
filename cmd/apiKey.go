@@ -18,7 +18,7 @@ var (
 		Long:  `Allow setting a new API Key`,
 		RunE:  apiKey,
 	}
-	force  bool
+	forceApiKey  bool
 	setCmd = &cobra.Command{
 		Use:   "set",
 		Short: "Set API Key",
@@ -32,7 +32,7 @@ func init() {
 	rootCmd.AddCommand(apiKeyCmd)
 
 	apiKeyCmd.AddCommand(setCmd)
-	setCmd.Flags().BoolVarP(&force, "force", "f", false, "Overwrite existing stored API Key")
+	setCmd.Flags().BoolVarP(&forceApiKey, "force", "f", false, "Overwrite existing stored API Key")
 }
 
 func apiKey(_ *cobra.Command, _ []string) error {
@@ -47,7 +47,7 @@ func apiKey(_ *cobra.Command, _ []string) error {
 }
 
 func set(_ *cobra.Command, _ []string) error {
-	if _, err := keyring.Store.Get("api-key"); !force && err == nil {
+	if _, err := keyring.Store.Get("api-key"); !forceApiKey && err == nil {
 		fmt.Println("API Key already stored, use --force to overwrite")
 		return nil
 	}
