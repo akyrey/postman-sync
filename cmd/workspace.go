@@ -221,11 +221,12 @@ func push(_ *cobra.Command, args []string) error {
 		log.Fatalf("Unable to unmarshal workspace data: %v\n", err)
 		return err
 	}
-	_, err = pm.CreateWorkspace(workspace)
+	ws, err := pm.CreateWorkspace(workspace)
 	if err != nil {
 		log.Fatalf("Unable to create workspace: %s\n", err)
 		return err
 	}
+	uid = ws.ID
 
 	// Read all collections data and create each
 	collectionsFolder := fmt.Sprintf("%scollections/", source)
