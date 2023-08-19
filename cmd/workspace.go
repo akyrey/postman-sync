@@ -9,6 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	"github.com/akyrey/postman-sync/pkg/postman"
 )
 
 var (
@@ -47,9 +49,19 @@ Retrieve the workspace related to the uid passed as argument and save it inside 
 All its collections and environments (currently mocks and APIs aren't supported) are saved too inside the relative folders`,
 		RunE: clone,
 	}
+	wsPushSource string
+	pushCmd      = &cobra.Command{
+		Use:   "push",
+		Short: "Push the given workspace",
+		Long: `Push the given workspace.
+Find the workspace with the given uid inside the configured folder, and create it anew inside user api-key Postman
+All its collections and environments (currently mocks and APIs aren't supported) are created as well`,
+		RunE: push,
+	}
 
-	ErrMissingUid   error = errors.New("uid argument missing")
-	ErrFolderExists error = errors.New("folder already exists")
+	ErrMissingUid        error = errors.New("uid argument missing")
+	ErrFolderExists      error = errors.New("folder already exists")
+	ErrFolderDoesntExist error = errors.New("folder doesn't exist")
 )
 
 func init() {
@@ -61,6 +73,8 @@ func init() {
 	workspaceCmd.AddCommand(cloneCmd)
 	cloneCmd.Flags().StringVar(&wsCloneDest, "dest", "", "destination to save workspace info to (default is $HOME/.postman-sync/$workspaceUid)")
 	cloneCmd.Flags().BoolVarP(&wsForceClone, "force", "f", false, "overwrite existing workspace folder if it exists")
+	workspaceCmd.AddCommand(pushCmd)
+	pushCmd.Flags().StringVar(&wsPushSource, "source", "", "source to load workspace info from (default is $HOME/.postman-sync/$workspaceUid)")
 }
 
 func ls(_ *cobra.Command, _ []string) error {
@@ -172,6 +186,90 @@ func clone(_ *cobra.Command, args []string) error {
 	return nil
 }
 
+func push(_ *cobra.Command, args []string) error {
+	if len(args) != 1 {
+		log.Fatalln("Missing uid argument for workspace pull")
+		return ErrMissingUid
+	}
+
+	uid := args[0]
+	source := getSource(uid)
+
+	if _, err := os.Stat(source); os.IsNotExist(err) {
+		log.Fatalf("Folder %s doesn't exist\n", source)
+		return ErrFolderDoesntExist
+	}
+
+	// Read workspace data and create it
+	workspaceFile, err := os.ReadFile(fmt.Sprintf("%s%s.json", source, uid))
+	if err != nil {
+		log.Fatalf("Unable to read data from file: %v", err)
+		return err
+	}
+	var workspace postman.Workspace
+	err = json.Unmarshal(workspaceFile, &workspace)
+	if err != nil {
+		log.Fatalf("Unable to unmarshal workspace data: %v", err)
+		return err
+	}
+	_, err = pm.CreateWorkspace(workspace)
+	if err != nil {
+		log.Fatalf("Unable to create workspace: %s", err)
+	}
+
+	// Read all collections data and create each
+	collectionsFolder := fmt.Sprintf("%scollections/", source)
+	if _, err := os.Stat(collectionsFolder); os.IsNotExist(err) {
+		log.Fatalf("Folder %s doesn't exist\n", collectionsFolder)
+		return ErrFolderDoesntExist
+	}
+	for i := range workspace.Collections {
+		cUid := workspace.Collections[i].UID
+		collectionFile, err := os.ReadFile(fmt.Sprintf("%s%s.json", collectionsFolder, cUid))
+		if err != nil {
+			log.Fatalf("Unable to read data from file: %v", err)
+			return err
+		}
+		var collection postman.Collection
+		err = json.Unmarshal(collectionFile, &collection)
+		if err != nil {
+			log.Fatalf("Unable to unmarshal collection data: %v", err)
+			return err
+		}
+		_, err = pm.CreateCollection(collection, uid)
+		if err != nil {
+			log.Fatalf("Unable to create collection: %s", err)
+		}
+	}
+
+	// Read all environments data and create each
+	environmentsFolder := fmt.Sprintf("%senvironments/", source)
+	if _, err := os.Stat(environmentsFolder); os.IsNotExist(err) {
+		log.Fatalf("Folder %s doesn't exist\n", environmentsFolder)
+		return ErrFolderDoesntExist
+	}
+	for i := range workspace.Environments {
+		eUid := workspace.Environments[i].UID
+		environmentFile, err := os.ReadFile(fmt.Sprintf("%s%s.json", environmentsFolder, eUid))
+		if err != nil {
+			log.Fatalf("Unable to read data from file: %v", err)
+			return err
+		}
+		var environment postman.Environment
+		err = json.Unmarshal(environmentFile, &environment)
+		if err != nil {
+			log.Fatalf("Unable to unmarshal environment data: %v", err)
+			return err
+		}
+		_, err = pm.CreateEnvironment(environment, uid)
+		if err != nil {
+			log.Fatalf("Unable to create environment: %s", err)
+		}
+	}
+
+	return nil
+}
+
 // Retrieve clone destination to use
 // First checks `dest` flag, then `workspace.clone.dest` config value and fallback to `$HOME/.postman-sync/$uid`
 func getDestination(uid string) string {
@@ -181,6 +279,20 @@ func getDestination(uid string) string {
 
 	if viper.IsSet("workspace.clone.dest") {
 		return viper.GetString("workspace.clone.dest")
+	}
+
+	return fmt.Sprintf("/home/akyrey/.postman-sync/%s/", uid)
+}
+
+// Retrieve push source to use
+// First checks `source` flag, then `workspace.push.source` config value and fallback to `$HOME/.postman-sync/$uid`
+func getSource(uid string) string {
+	if wsPushSource != "" {
+		return wsPushSource
+	}
+
+	if viper.IsSet("workspace.push.source") {
+		return viper.GetString("workspace.push.source")
 	}
 
 	return fmt.Sprintf("/home/akyrey/.postman-sync/%s/", uid)

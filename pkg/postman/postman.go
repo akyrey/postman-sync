@@ -145,7 +145,7 @@ func (p *Postman) RetrieveCollection(uid string) (*Collection, error) {
 	return &resp.Collection, nil
 }
 
-func (p *Postman) CreateCollections(c Collection, wsUid string) (*Collection, error) {
+func (p *Postman) CreateCollection(c Collection, wsUid string) (*Collection, error) {
 	reqBody, err := json.Marshal(CollectionResponse{Collection: c})
 	if err != nil {
 		return nil, err
@@ -229,7 +229,7 @@ func (p *Postman) RetrieveEnvironment(uid string) (*Environment, error) {
 	return &resp.Environment, nil
 }
 
-func (p *Postman) CreateEnvironments(e Environment, wsUid string) (*Environment, error) {
+func (p *Postman) CreateEnvironment(e Environment, wsUid string) (*Environment, error) {
 	reqBody, err := json.Marshal(EnvironmentResponse{Environment: e})
 	if err != nil {
 		return nil, err
