@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"log/slog"
 
 	"github.com/akyrey/postman-sync/pkg/postman"
 )
@@ -85,7 +85,7 @@ func ls(_ *cobra.Command, _ []string) error {
 
 func get(_ *cobra.Command, args []string) error {
 	if len(args) != 1 {
-		log.Fatalln("Missing uid argument for workspace get")
+		slog.Error("Missing uid argument for workspace get")
 		return ErrMissingUid
 	}
 
@@ -96,7 +96,7 @@ func get(_ *cobra.Command, args []string) error {
 
 func rm(_ *cobra.Command, args []string) error {
 	if len(args) != 1 {
-		log.Fatalln("Missing uid argument for workspace rm")
+		slog.Error("Missing uid argument for workspace rm")
 		return ErrMissingUid
 	}
 
@@ -106,7 +106,7 @@ func rm(_ *cobra.Command, args []string) error {
 
 func clone(_ *cobra.Command, args []string) error {
 	if len(args) != 1 {
-		log.Fatalln("Missing uid argument for workspace pull")
+		slog.Error("Missing uid argument for workspace pull")
 		return ErrMissingUid
 	}
 
@@ -115,7 +115,7 @@ func clone(_ *cobra.Command, args []string) error {
 
 	_, err := os.Stat(dest)
 	if !wsForceClone && !os.IsNotExist(err) {
-		log.Fatalf("Folder %s already exists and `force` not provided\n", dest)
+		slog.Error("Folder already exists and `force` not provided", dest)
 		return ErrFolderExists
 	}
 
@@ -123,7 +123,7 @@ func clone(_ *cobra.Command, args []string) error {
 	if wsForceClone && !os.IsNotExist(err) {
 		err = os.RemoveAll(dest)
 		if err != nil {
-			log.Fatalf("Unable to remove existing workspace folder: %v\n", err)
+			slog.Error("Unable to remove existing workspace folder: ", err)
 			return err
 		}
 	}
@@ -131,20 +131,20 @@ func clone(_ *cobra.Command, args []string) error {
 	// Create destination folder
 	err = os.MkdirAll(dest, os.ModePerm)
 	if err != nil {
-		log.Fatalf("Unable to create destination directory: %v\n", err)
+		slog.Error("Unable to create destination directory: ", err)
 		return err
 	}
 
 	// Retrieve and save workspace
 	ws, err := pm.RetrieveWorkspace(uid)
 	if err != nil {
-		log.Fatalf("Failed retrieving workspace: %v\n", err)
+		slog.Error("Failed retrieving workspace: ", err)
 		return err
 	}
 
 	err = saveDataToJsonFile(ws, dest, uid)
 	if err != nil {
-		log.Fatalf("Unable to save workspace: %v\n", err)
+		slog.Error("Unable to save workspace: ", err)
 		return err
 	}
 
@@ -152,20 +152,20 @@ func clone(_ *cobra.Command, args []string) error {
 	collectionsFolder := fmt.Sprintf("%scollections/", dest)
 	err = os.Mkdir(collectionsFolder, os.ModePerm)
 	if err != nil {
-		log.Fatalf("Unable to create collections directory: %v\n", err)
+		slog.Error("Unable to create collections directory: ", err)
 		return err
 	}
 	for i := range ws.Collections {
 		cUid := ws.Collections[i].UID
 		collection, err := pm.RetrieveCollection(cUid)
 		if err != nil {
-			log.Fatalf("Failed retrieving collection '%s': %v\n", cUid, err)
+			slog.Error("Failed retrieving collection", cUid, err)
 			return err
 		}
 
 		err = saveDataToJsonFile(collection, collectionsFolder, cUid)
 		if err != nil {
-			log.Fatalf("Unable to save collection: %v\n", err)
+			slog.Error("Unable to save collection: ", err)
 			return err
 		}
 	}
@@ -174,20 +174,20 @@ func clone(_ *cobra.Command, args []string) error {
 	environmentsFolder := fmt.Sprintf("%senvironments/", dest)
 	err = os.Mkdir(environmentsFolder, os.ModePerm)
 	if err != nil {
-		log.Fatalf("Unable to create environments directory: %v\n", err)
+		slog.Error("Unable to create environments directory: ", err)
 		return err
 	}
 	for i := range ws.Environments {
 		eUid := ws.Environments[i].UID
 		environment, err := pm.RetrieveEnvironment(eUid)
 		if err != nil {
-			log.Fatalf("Failed retrieving environment '%s': %v\n", eUid, err)
+			slog.Error("Failed retrieving environment", eUid, err)
 			return err
 		}
 
 		err = saveDataToJsonFile(environment, environmentsFolder, eUid)
 		if err != nil {
-			log.Fatalf("Unable to save environment: %v\n", err)
+			slog.Error("Unable to save environment: ", err)
 			return err
 		}
 	}
@@ -197,7 +197,7 @@ func clone(_ *cobra.Command, args []string) error {
 
 func push(_ *cobra.Command, args []string) error {
 	if len(args) != 1 {
-		log.Fatalln("Missing uid argument for workspace pull")
+		slog.Error("Missing uid argument for workspace pull")
 		return ErrMissingUid
 	}
 
@@ -205,25 +205,25 @@ func push(_ *cobra.Command, args []string) error {
 	source := getSource(uid)
 
 	if _, err := os.Stat(source); os.IsNotExist(err) {
-		log.Fatalf("Folder %s doesn't exist\n", source)
+		slog.Error("Folder doesn't exist", source)
 		return ErrFolderDoesntExist
 	}
 
 	// Read workspace data and create it
 	workspaceFile, err := os.ReadFile(fmt.Sprintf("%s%s.json", source, uid))
 	if err != nil {
-		log.Fatalf("Unable to read data from file: %v\n", err)
+		slog.Error("Unable to read data from file: ", err)
 		return err
 	}
 	var workspace postman.Workspace
 	err = json.Unmarshal(workspaceFile, &workspace)
 	if err != nil {
-		log.Fatalf("Unable to unmarshal workspace data: %v\n", err)
+		slog.Error("Unable to unmarshal workspace data: ", err)
 		return err
 	}
-	ws, err := pm.CreateWorkspace(workspace)
+	ws, err := pm.CreateWorkspace(postman.CreateWorkspaceParam{Name: workspace.Name, Description: workspace.Description, Type: workspace.Type})
 	if err != nil {
-		log.Fatalf("Unable to create workspace: %s\n", err)
+		slog.Error("Unable to create workspace: ", err)
 		return err
 	}
 	uid = ws.ID
@@ -231,53 +231,55 @@ func push(_ *cobra.Command, args []string) error {
 	// Read all collections data and create each
 	collectionsFolder := fmt.Sprintf("%scollections/", source)
 	if _, err := os.Stat(collectionsFolder); os.IsNotExist(err) {
-		log.Fatalf("Folder %s doesn't exist\n", collectionsFolder)
+		slog.Error("Folder doesn't exist", collectionsFolder)
 		return ErrFolderDoesntExist
 	}
 	for i := range workspace.Collections {
 		cUid := workspace.Collections[i].UID
 		collectionFile, err := os.ReadFile(fmt.Sprintf("%s%s.json", collectionsFolder, cUid))
 		if err != nil {
-			log.Fatalf("Unable to read data from file: %v\n", err)
+			slog.Error("Unable to read data from file: ", err)
 			return err
 		}
-		var collection postman.Collection
+		var collection postman.CreateCollectionParam
 		err = json.Unmarshal(collectionFile, &collection)
 		if err != nil {
-			log.Fatalf("Unable to unmarshal collection data: %v\n", err)
+			slog.Error("Unable to unmarshal collection data: ", err)
 			return err
 		}
-		_, err = pm.CreateCollection(collection, uid)
+		c, err := pm.CreateCollection(collection, uid)
 		if err != nil {
-			log.Fatalf("Unable to create collection: %s\n", err)
+			slog.Error("Unable to create collection: ", err)
 			return err
 		}
+		slog.Debug("Created collection", c)
 	}
 
 	// Read all environments data and create each
 	environmentsFolder := fmt.Sprintf("%senvironments/", source)
 	if _, err := os.Stat(environmentsFolder); os.IsNotExist(err) {
-		log.Fatalf("Folder %s doesn't exist\n", environmentsFolder)
+		slog.Error("Folder doesn't exist", environmentsFolder)
 		return ErrFolderDoesntExist
 	}
 	for i := range workspace.Environments {
 		eUid := workspace.Environments[i].UID
 		environmentFile, err := os.ReadFile(fmt.Sprintf("%s%s.json", environmentsFolder, eUid))
 		if err != nil {
-			log.Fatalf("Unable to read data from file: %v\n", err)
+			slog.Error("Unable to read data from file: ", err)
 			return err
 		}
-		var environment postman.Environment
+		var environment postman.CreateEnvironmentParam
 		err = json.Unmarshal(environmentFile, &environment)
 		if err != nil {
-			log.Fatalf("Unable to unmarshal environment data: %v\n", err)
+			slog.Error("Unable to unmarshal environment data: ", err)
 			return err
 		}
-		_, err = pm.CreateEnvironment(environment, uid)
+		e, err := pm.CreateEnvironment(environment, uid)
 		if err != nil {
-			log.Fatalf("Unable to create environment: %s\n", err)
+			slog.Error("Unable to create environment: ", err)
 			return err
 		}
+		slog.Debug("Created environment", e)
 	}
 
 	return nil
@@ -314,12 +316,12 @@ func getSource(uid string) string {
 func saveDataToJsonFile(data interface{}, dest, name string) error {
 	file, err := json.MarshalIndent(data, "", " ")
 	if err != nil {
-		log.Fatalf("Unable to marshal data: %v\n", err)
+		slog.Error("Unable to marshal data: ", err)
 		return err
 	}
 	err = os.WriteFile(fmt.Sprintf("%s%s.json", dest, name), file, 0644)
 	if err != nil {
-		log.Fatalf("Unable to write data to file: %v\n", err)
+		slog.Error("Unable to write data to file: ", err)
 		return err
 	}
 

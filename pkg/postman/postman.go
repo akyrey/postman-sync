@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
+	"log/slog"
 )
 
 const (
@@ -35,9 +37,8 @@ func (p *Postman) RetrieveWorkspaces() ([]WorkspaceInfo, error) {
 		return nil, err
 	}
 
-	defer body.Close()
 	var resp WorkspaceListResponse
-	err = json.NewDecoder(body).Decode(&resp)
+	err = p.getJsonResponse(body, &resp)
 	if err != nil {
 		return nil, err
 	}
@@ -51,9 +52,8 @@ func (p *Postman) RetrieveWorkspace(id string) (*Workspace, error) {
 		return nil, err
 	}
 
-	defer body.Close()
 	var resp WorkspaceResponse
-	err = json.NewDecoder(body).Decode(&resp)
+	err = p.getJsonResponse(body, &resp)
 	if err != nil {
 		return nil, err
 	}
@@ -61,9 +61,12 @@ func (p *Postman) RetrieveWorkspace(id string) (*Workspace, error) {
 	return &resp.Workspace, nil
 }
 
-func (p *Postman) CreateWorkspace(ws Workspace) (*Workspace, error) {
-	reqBody, err := json.Marshal(WorkspaceResponse{Workspace: ws})
+func (p *Postman) CreateWorkspace(ws CreateWorkspaceParam) (*Workspace, error) {
+	reqBody, err := json.Marshal(struct {
+		Workspace CreateWorkspaceParam `json:"workspace"`
+	}{Workspace: ws})
 	if err != nil {
+		slog.Error("Error marshaling workspace", err)
 		return nil, err
 	}
 	body, err := p.performRequest("POST", fmt.Sprintf("%sworkspaces", url), reqBody)
@@ -71,18 +74,20 @@ func (p *Postman) CreateWorkspace(ws Workspace) (*Workspace, error) {
 		return nil, err
 	}
 
-	defer body.Close()
-	var workspace Workspace
-	err = json.NewDecoder(body).Decode(&workspace)
+	var resp WorkspaceResponse
+	err = p.getJsonResponse(body, &resp)
 	if err != nil {
+		slog.Error("Error decoding response to workspace", err)
 		return nil, err
 	}
 
-	return &workspace, nil
+	return &resp.Workspace, nil
 }
 
-func (p *Postman) UpdateWorkspace(uid string, ws Workspace) (*Workspace, error) {
-	reqBody, err := json.Marshal(WorkspaceResponse{Workspace: ws})
+func (p *Postman) UpdateWorkspace(uid string, ws UpdateWorkspaceParam) (*Workspace, error) {
+	reqBody, err := json.Marshal(struct {
+		Workspace UpdateWorkspaceParam `json:"workspace"`
+	}{Workspace: ws})
 	if err != nil {
 		return nil, err
 	}
@@ -91,14 +96,13 @@ func (p *Postman) UpdateWorkspace(uid string, ws Workspace) (*Workspace, error) 
 		return nil, err
 	}
 
-	defer body.Close()
-	var workspace Workspace
-	err = json.NewDecoder(body).Decode(&workspace)
+	var resp WorkspaceResponse
+	err = p.getJsonResponse(body, &resp)
 	if err != nil {
 		return nil, err
 	}
 
-	return &workspace, nil
+	return &resp.Workspace, nil
 }
 
 func (p *Postman) DeleteWorkspace(id string) error {
@@ -119,9 +123,8 @@ func (p *Postman) RetrieveCollections() ([]CollectionInfo, error) {
 		return nil, err
 	}
 
-	defer body.Close()
 	var resp CollectionListResponse
-	err = json.NewDecoder(body).Decode(&resp)
+	err = p.getJsonResponse(body, &resp)
 	if err != nil {
 		return nil, err
 	}
@@ -135,9 +138,8 @@ func (p *Postman) RetrieveCollection(uid string) (*Collection, error) {
 		return nil, err
 	}
 
-	defer body.Close()
 	var resp CollectionResponse
-	err = json.NewDecoder(body).Decode(&resp)
+	err = p.getJsonResponse(body, &resp)
 	if err != nil {
 		return nil, err
 	}
@@ -145,8 +147,10 @@ func (p *Postman) RetrieveCollection(uid string) (*Collection, error) {
 	return &resp.Collection, nil
 }
 
-func (p *Postman) CreateCollection(c Collection, wsUid string) (*Collection, error) {
-	reqBody, err := json.Marshal(CollectionResponse{Collection: c})
+func (p *Postman) CreateCollection(c CreateCollectionParam, wsUid string) (*Collection, error) {
+	reqBody, err := json.Marshal(struct {
+		Collection CreateCollectionParam `json:"collection"`
+	}{Collection: c})
 	if err != nil {
 		return nil, err
 	}
@@ -155,14 +159,13 @@ func (p *Postman) CreateCollection(c Collection, wsUid string) (*Collection, err
 		return nil, err
 	}
 
-	defer body.Close()
-	var collection Collection
-	err = json.NewDecoder(body).Decode(&collection)
+	var resp CollectionResponse
+	err = p.getJsonResponse(body, &resp)
 	if err != nil {
 		return nil, err
 	}
 
-	return &collection, nil
+	return &resp.Collection, nil
 }
 
 func (p *Postman) UpdateCollection(uid string, c Collection) (*Collection, error) {
@@ -175,14 +178,13 @@ func (p *Postman) UpdateCollection(uid string, c Collection) (*Collection, error
 		return nil, err
 	}
 
-	defer body.Close()
-	var collection Collection
-	err = json.NewDecoder(body).Decode(&collection)
+	var resp CollectionResponse
+	err = p.getJsonResponse(body, &resp)
 	if err != nil {
 		return nil, err
 	}
 
-	return &collection, nil
+	return &resp.Collection, nil
 }
 
 func (p *Postman) DeleteCollection(id string) error {
@@ -203,9 +205,8 @@ func (p *Postman) RetrieveEnvironments() ([]EnvironmentInfo, error) {
 		return nil, err
 	}
 
-	defer body.Close()
 	var resp EnvironmentListResponse
-	err = json.NewDecoder(body).Decode(&resp)
+	err = p.getJsonResponse(body, &resp)
 	if err != nil {
 		return nil, err
 	}
@@ -219,9 +220,8 @@ func (p *Postman) RetrieveEnvironment(uid string) (*Environment, error) {
 		return nil, err
 	}
 
-	defer body.Close()
 	var resp EnvironmentResponse
-	err = json.NewDecoder(body).Decode(&resp)
+	err = p.getJsonResponse(body, &resp)
 	if err != nil {
 		return nil, err
 	}
@@ -229,8 +229,10 @@ func (p *Postman) RetrieveEnvironment(uid string) (*Environment, error) {
 	return &resp.Environment, nil
 }
 
-func (p *Postman) CreateEnvironment(e Environment, wsUid string) (*Environment, error) {
-	reqBody, err := json.Marshal(EnvironmentResponse{Environment: e})
+func (p *Postman) CreateEnvironment(e CreateEnvironmentParam, wsUid string) (*Environment, error) {
+	reqBody, err := json.Marshal(struct {
+		Environment CreateEnvironmentParam `json:"environment"`
+	}{Environment: e})
 	if err != nil {
 		return nil, err
 	}
@@ -239,14 +241,13 @@ func (p *Postman) CreateEnvironment(e Environment, wsUid string) (*Environment, 
 		return nil, err
 	}
 
-	defer body.Close()
-	var environment Environment
-	err = json.NewDecoder(body).Decode(&environment)
+	var resp EnvironmentResponse
+	err = p.getJsonResponse(body, &resp)
 	if err != nil {
 		return nil, err
 	}
 
-	return &environment, nil
+	return &resp.Environment, nil
 }
 
 func (p *Postman) UpdateEnvironment(uid string, e Environment) (*Environment, error) {
@@ -259,14 +260,13 @@ func (p *Postman) UpdateEnvironment(uid string, e Environment) (*Environment, er
 		return nil, err
 	}
 
-	defer body.Close()
-	var environment Environment
-	err = json.NewDecoder(body).Decode(&environment)
+	var resp EnvironmentResponse
+	err = p.getJsonResponse(body, &resp)
 	if err != nil {
 		return nil, err
 	}
 
-	return &environment, nil
+	return &resp.Environment, nil
 }
 
 func (p *Postman) DeleteEnvironment(uid string) error {
@@ -280,8 +280,11 @@ func (p *Postman) DeleteEnvironment(uid string) error {
 
 // Method used to perform all fetch requests
 func (p *Postman) performRequest(method, url string, reqBody []byte) (io.ReadCloser, error) {
+	// fmt.Printf("Performing request %s %s %s\n", method, url, string(reqBody))
+	slog.Debug("Performing request", method, url, string(reqBody))
 	req, err := http.NewRequest(method, url, bytes.NewBuffer(reqBody))
 	if err != nil {
+		slog.Error("Failed creating request", err)
 		return nil, err
 	}
 
@@ -290,10 +293,19 @@ func (p *Postman) performRequest(method, url string, reqBody []byte) (io.ReadClo
 
 	resp, err := client.Do(req)
 	if err != nil {
+		slog.Error("Failed performing request", err)
 		return nil, err
 	}
+	// body, err := io.ReadAll(resp.Body)
+	// fmt.Printf("Received response %v\n", string(body))
+	//    resp.Body = io.NopCloser(bytes.NewReader(body))
 
 	return resp.Body, nil
+}
+
+func (p *Postman) getJsonResponse(body io.ReadCloser, target interface{}) error {
+	defer body.Close()
+	return json.NewDecoder(body).Decode(target)
 }
 
 // HTTPClientWithFallBack to be used in all fetch operations.
