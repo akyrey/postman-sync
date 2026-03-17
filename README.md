@@ -237,4 +237,4 @@ go test ./... -cover
 
 ## License
 
-MIT
+GNU General Public License
