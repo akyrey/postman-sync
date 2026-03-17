@@ -68,6 +68,72 @@ export POSTMAN_WORKSPACE_ID=your-workspace-id
 
 The `auth.type` field supports: `apikey`, `basic`, `bearer`, `oauth1`, `oauth2`, `digest`, `ntlm`, `hawk`, `awsv4`, `edgegrid`, `noauth`.
 
+### OAuth2 configuration
+
+OAuth2 has two conceptual sections in Postman: the **current token** (sent with requests) and the **new token** (the OAuth2 flow used to fetch a token). Both are configured via `attributes` key/value pairs.
+
+```yaml
+auth:
+  type: "oauth2"
+  attributes:
+    # --- Current Token (what gets sent with requests) ---
+    - key: "accessToken"
+      value: "{{oauth2_access_token}}"
+      type: "string"
+    - key: "tokenType"
+      value: "Bearer"
+      type: "string"
+    - key: "addTokenTo"
+      value: "header"          # "header" or "queryParams"
+      type: "string"
+    - key: "headerPrefix"
+      value: "Bearer"
+      type: "string"
+
+    # --- New Token (OAuth2 flow configuration) ---
+    - key: "grant_type"
+      value: "client_credentials"   # authorization_code | implicit | password | client_credentials
+      type: "string"
+    - key: "tokenName"
+      value: "My API Token"
+      type: "string"
+    - key: "authUrl"
+      value: "https://auth.example.com/oauth/authorize"
+      type: "string"
+    - key: "accessTokenUrl"
+      value: "https://auth.example.com/oauth/token"
+      type: "string"
+    - key: "clientId"
+      value: "{{oauth2_client_id}}"
+      type: "string"
+    - key: "clientSecret"
+      value: "{{oauth2_client_secret}}"
+      type: "string"
+    - key: "scope"
+      value: "openid profile email"
+      type: "string"
+    - key: "clientAuth"
+      value: "header"          # "header" (Basic auth) or "body"
+      type: "string"
+    - key: "redirect_uri"
+      value: "https://oauth.pstmn.io/v1/callback"
+      type: "string"
+    - key: "useBrowser"
+      value: "false"
+      type: "string"
+```
+
+Required keys vary by grant type:
+
+| Grant type | Required keys |
+|---|---|
+| `client_credentials` | `accessTokenUrl`, `clientId`, `clientSecret`, `scope` |
+| `authorization_code` | `authUrl`, `accessTokenUrl`, `clientId`, `clientSecret`, `scope`, `redirect_uri` |
+| `implicit` | `authUrl`, `clientId`, `scope`, `redirect_uri` |
+| `password` | `accessTokenUrl`, `clientId`, `clientSecret`, `username`, `password`, `scope` |
+
+> All attribute values must be strings (including booleans like `"false"`). Postman accepts this correctly.
+
 ### Example config
 
 ```yaml
