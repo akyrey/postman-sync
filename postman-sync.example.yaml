@@ -1,0 +1,71 @@
+# postman-sync configuration
+#
+# Secrets can also be set via environment variables:
+#   POSTMAN_API_KEY, POSTMAN_WORKSPACE_ID
+
+# Required
+postman_api_key: ""        # Postman API key (prefer env var POSTMAN_API_KEY)
+workspace_id: ""           # Postman workspace ID (prefer env var POSTMAN_WORKSPACE_ID)
+
+# Input OpenAPI spec path (JSON or YAML)
+openapi_path: "./openapi.json"
+
+# Base URL to set on every request (Postman variable reference recommended)
+base_url: "{{baseUrl}}"
+
+# Replace enum values with a placeholder to reduce diff noise (default: true)
+sanitize_enums: true
+
+# Doc links: append a documentation link to each request description.
+# Omit this section entirely to disable doc links.
+# doc_links:
+#   base_url: "https://your.docs.host/#tag/"
+
+# Common headers injected into every request
+common_headers:
+  - key: "X-Tenant"
+    value: "{{tenantId}}"
+    disabled: false
+  - key: "X-App"
+    value: "{{appSlug}}"
+    disabled: false
+
+# Collection-level authentication
+auth:
+  type: "bearer"           # apikey, basic, bearer, oauth2, noauth, etc.
+  attributes:
+    - key: "token"
+      value: "{{authToken}}"
+      type: "string"
+
+# Collection-level scripts
+scripts:
+  prerequest: |
+    // Collection-level pre-request script
+    console.log("Pre-request running");
+  test: |
+    // Collection-level test script
+    pm.test("Status is 2xx", function() {
+      pm.expect(pm.response.code).to.be.within(200, 299);
+    });
+
+# Per-folder (tag) overrides for auth and scripts.
+# Folder names correspond to OpenAPI tags.
+# folder_overrides:
+#   "Authentication":
+#     auth:
+#       type: "noauth"
+#     scripts:
+#       prerequest: |
+#         // No pre-request needed
+#       test: |
+#         pm.test("Returns token", function() {
+#           pm.expect(pm.response.json().token).to.exist;
+#         });
+#   "Admin":
+#     auth:
+#       type: "bearer"
+#       attributes:
+#         - key: "token"
+#           value: "{{adminToken}}"
+#           type: "string"
