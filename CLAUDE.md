@@ -29,7 +29,8 @@ postman/merge.go         # Name-based recursive merge preserving auth/events/res
 
 - **CollectionItem union type**: A single struct with `Items *[]CollectionItem` field. `nil` = leaf request, non-nil = folder. Check via `IsFolder()`.
 - **Merge preserves customizations**: When merging old + new items by name, `auth`, `event` (scripts), and `response` (saved examples) are kept from the old collection. Request URL/method/body/headers come from the new spec. Items removed from the spec are dropped.
-- **Config over code**: Auth types, scripts, headers, base URL, folder overrides are all driven by the YAML config file. No hardcoded values.
+- **Config over code**: Auth types, scripts, headers, base URL, folder overrides, and auth propagation are all driven by the YAML config file. No hardcoded values.
+- **Auth propagation**: `auth.propagation: "inherit"` clears `CollectionItem.Auth` and `Request.Auth` on every folder and leaf request (except `noauth` items and folders with a `folder_override`) so they inherit from the collection. Implemented in `PropagateAuthInherit` in `postman/transform.go`, called after `ApplyFolderOverrides`.
 - **Client testability**: The `Client` struct has an unexported `baseURL` field and `withBaseURL()` method. Client tests use `httptest.NewServer` and are white-box (same package) to inject the test server URL.
 - **Transform functions are pure**: They take `[]CollectionItem` and return/mutate in place. No API calls. Easy to test.
 
@@ -73,7 +74,7 @@ The tool reads `postman-sync.yaml` (or path from `--config` flag). Secrets can b
 2. Load OpenAPI spec (`openapi.Load`), optionally sanitize enums
 3. Import spec into Postman API -> temporary collection UID
 4. Fetch the generated collection, delete the temporary one
-5. Transform: flatten -> sort -> headers -> auth -> scripts -> folder overrides -> base URL -> doc links
+5. Transform: flatten -> sort -> headers -> auth -> scripts -> folder overrides -> auth propagation (if `inherit`) -> base URL -> doc links
 6. Look up existing collection by name in workspace
 7. If exists: fetch old, `MergeItems(old, new)`, update
 8. If not: strip IDs, create new collection

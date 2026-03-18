@@ -131,6 +131,45 @@ func ApplyFolderOverrides(items []CollectionItem, overrides map[string]config.Fo
 	return nil
 }
 
+// PropagateAuthInherit clears the auth on every folder and leaf request so that
+// they inherit authentication from their parent (collection or enclosing folder).
+//
+// Rules:
+//   - Items whose auth type is "noauth" are left untouched – they explicitly
+//     opt out of authentication and should not be changed.
+//   - Items with nil auth are already inheriting; they are skipped.
+//   - Folders whose name appears as a key in overrides are skipped (only the
+//     folder itself; its children are still processed so they can inherit from
+//     the overridden folder).
+//   - For leaf requests, both CollectionItem.Auth and Request.Auth are cleared.
+func PropagateAuthInherit(items []CollectionItem, overrides map[string]config.FolderOverride) {
+	for i := range items {
+		isOverriddenFolder := items[i].IsFolder() && len(overrides) > 0
+		if isOverriddenFolder {
+			if _, hasOverride := overrides[items[i].Name]; hasOverride {
+				// Skip clearing this folder's auth; it has an explicit override.
+				// Still recurse so its children can inherit from it.
+				PropagateAuthInherit(*items[i].Items, overrides)
+				continue
+			}
+		}
+
+		// Clear item-level auth unless it is explicitly noauth or already nil.
+		if items[i].Auth != nil && items[i].Auth.Type != "noauth" {
+			items[i].Auth = nil
+		}
+
+		if items[i].IsFolder() {
+			PropagateAuthInherit(*items[i].Items, overrides)
+		} else if items[i].Request != nil {
+			// Also clear request-level auth for leaf requests.
+			if items[i].Request.Auth != nil && items[i].Request.Auth.Type != "noauth" {
+				items[i].Request.Auth = nil
+			}
+		}
+	}
+}
+
 // SetBaseURL replaces the host (and protocol/port) of every request URL with
 // baseURL. If baseURL starts with "{{" it is treated as a Postman variable.
 func SetBaseURL(items []CollectionItem, baseURL string) {

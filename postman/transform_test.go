@@ -468,3 +468,206 @@ func TestAddDocLinks_RecursesIntoFolders(t *testing.T) {
 		t.Errorf("doc link not added to nested request: %q", childDesc)
 	}
 }
+
+// ── PropagateAuthInherit ──────────────────────────────────────────────────────
+
+// bearerAuth returns a postman Auth struct with type "bearer" for test use.
+func bearerAuth() *postman.Auth {
+	return &postman.Auth{
+		Type:   "bearer",
+		Bearer: []postman.AuthAttribute{{Key: "token", Value: "{{tok}}"}},
+	}
+}
+
+// noAuth returns a postman Auth struct with type "noauth" for test use.
+func noAuth() *postman.Auth {
+	return &postman.Auth{Type: "noauth"}
+}
+
+func TestPropagateAuthInherit_ClearsExplicitAuthOnLeaf(t *testing.T) {
+	item := leafItem("Get pet", "GET", "pets")
+	item.Auth = bearerAuth()
+	items := []postman.CollectionItem{item}
+
+	postman.PropagateAuthInherit(items, nil)
+
+	if items[0].Auth != nil {
+		t.Errorf("expected item.Auth to be nil (inheriting), got %+v", items[0].Auth)
+	}
+}
+
+func TestPropagateAuthInherit_ClearsRequestAuthOnLeaf(t *testing.T) {
+	item := leafItem("Get pet", "GET", "pets")
+	item.Request.Auth = bearerAuth()
+	items := []postman.CollectionItem{item}
+
+	postman.PropagateAuthInherit(items, nil)
+
+	if items[0].Request.Auth != nil {
+		t.Errorf("expected request.Auth to be nil (inheriting), got %+v", items[0].Request.Auth)
+	}
+}
+
+func TestPropagateAuthInherit_LeavesNoauthUntouched(t *testing.T) {
+	item := leafItem("Login", "POST", "auth", "login")
+	item.Auth = noAuth()
+	items := []postman.CollectionItem{item}
+
+	postman.PropagateAuthInherit(items, nil)
+
+	if items[0].Auth == nil || items[0].Auth.Type != "noauth" {
+		t.Errorf("noauth item should be left untouched, got %+v", items[0].Auth)
+	}
+}
+
+func TestPropagateAuthInherit_LeavesRequestNoauthUntouched(t *testing.T) {
+	item := leafItem("Login", "POST", "auth", "login")
+	item.Request.Auth = noAuth()
+	items := []postman.CollectionItem{item}
+
+	postman.PropagateAuthInherit(items, nil)
+
+	if items[0].Request.Auth == nil || items[0].Request.Auth.Type != "noauth" {
+		t.Errorf("request noauth should be left untouched, got %+v", items[0].Request.Auth)
+	}
+}
+
+func TestPropagateAuthInherit_NilAuthAlreadyInheriting(t *testing.T) {
+	item := leafItem("Get", "GET", "items")
+	// item.Auth is already nil — no change expected, no panic.
+	items := []postman.CollectionItem{item}
+
+	postman.PropagateAuthInherit(items, nil)
+
+	if items[0].Auth != nil {
+		t.Errorf("nil auth should remain nil, got %+v", items[0].Auth)
+	}
+}
+
+func TestPropagateAuthInherit_ClearsAuthOnFolder(t *testing.T) {
+	folder := folderItem("Pets", leafItem("List", "GET", "pets"))
+	folder.Auth = bearerAuth()
+	items := []postman.CollectionItem{folder}
+
+	postman.PropagateAuthInherit(items, nil)
+
+	if items[0].Auth != nil {
+		t.Errorf("expected folder.Auth to be nil, got %+v", items[0].Auth)
+	}
+}
+
+func TestPropagateAuthInherit_RecursesIntoFolderChildren(t *testing.T) {
+	child := leafItem("List", "GET", "pets")
+	child.Auth = bearerAuth()
+	folder := folderItem("Pets", child)
+	items := []postman.CollectionItem{folder}
+
+	postman.PropagateAuthInherit(items, nil)
+
+	children := *items[0].Items
+	if children[0].Auth != nil {
+		t.Errorf("nested leaf auth should be cleared, got %+v", children[0].Auth)
+	}
+}
+
+func TestPropagateAuthInherit_SkipsFolderWithOverride(t *testing.T) {
+	folder := folderItem("Auth", leafItem("Login", "POST"))
+	folder.Auth = bearerAuth()
+	items := []postman.CollectionItem{folder}
+
+	overrides := map[string]config.FolderOverride{
+		"Auth": {Auth: &config.Auth{Type: "noauth"}},
+	}
+
+	postman.PropagateAuthInherit(items, overrides)
+
+	// The overridden folder's own auth should NOT be cleared.
+	if items[0].Auth == nil {
+		t.Error("folder with override should keep its auth")
+	}
+	if items[0].Auth.Type != "bearer" {
+		t.Errorf("folder auth type = %q, want %q", items[0].Auth.Type, "bearer")
+	}
+}
+
+func TestPropagateAuthInherit_StillProcessesChildrenOfOverriddenFolder(t *testing.T) {
+	child := leafItem("Login", "POST")
+	child.Auth = bearerAuth()
+	folder := folderItem("Auth", child)
+	folder.Auth = bearerAuth()
+	items := []postman.CollectionItem{folder}
+
+	overrides := map[string]config.FolderOverride{
+		"Auth": {Auth: &config.Auth{Type: "noauth"}},
+	}
+
+	postman.PropagateAuthInherit(items, overrides)
+
+	// Folder itself is protected, but its child should have auth cleared so it
+	// inherits from the overridden folder.
+	children := *items[0].Items
+	if children[0].Auth != nil {
+		t.Errorf("child of overridden folder should have auth cleared, got %+v", children[0].Auth)
+	}
+}
+
+func TestPropagateAuthInherit_DeepNesting(t *testing.T) {
+	leaf := leafItem("Deep", "GET", "a", "b")
+	leaf.Auth = bearerAuth()
+	inner := folderItem("Inner", leaf)
+	inner.Auth = bearerAuth()
+	outer := folderItem("Outer", inner)
+	outer.Auth = bearerAuth()
+	items := []postman.CollectionItem{outer}
+
+	postman.PropagateAuthInherit(items, nil)
+
+	if items[0].Auth != nil {
+		t.Errorf("outer folder auth should be cleared, got %+v", items[0].Auth)
+	}
+	innerFolder := (*items[0].Items)[0]
+	if innerFolder.Auth != nil {
+		t.Errorf("inner folder auth should be cleared, got %+v", innerFolder.Auth)
+	}
+	deepLeaf := (*innerFolder.Items)[0]
+	if deepLeaf.Auth != nil {
+		t.Errorf("deep leaf auth should be cleared, got %+v", deepLeaf.Auth)
+	}
+}
+
+func TestPropagateAuthInherit_MixedAuthTypes(t *testing.T) {
+	noauthItem := leafItem("Public", "GET", "public")
+	noauthItem.Auth = noAuth()
+
+	bearerItem := leafItem("Protected", "GET", "protected")
+	bearerItem.Auth = bearerAuth()
+
+	nilAuthItem := leafItem("NilAuth", "GET", "other")
+
+	items := []postman.CollectionItem{noauthItem, bearerItem, nilAuthItem}
+
+	postman.PropagateAuthInherit(items, nil)
+
+	if items[0].Auth == nil || items[0].Auth.Type != "noauth" {
+		t.Errorf("noauth item should be untouched, got %+v", items[0].Auth)
+	}
+	if items[1].Auth != nil {
+		t.Errorf("bearer item should have auth cleared, got %+v", items[1].Auth)
+	}
+	if items[2].Auth != nil {
+		t.Errorf("nil auth item should remain nil, got %+v", items[2].Auth)
+	}
+}
+
+func TestPropagateAuthInherit_NilOverridesMap(t *testing.T) {
+	item := leafItem("Get", "GET", "x")
+	item.Auth = bearerAuth()
+	items := []postman.CollectionItem{item}
+
+	// nil overrides map must not panic.
+	postman.PropagateAuthInherit(items, nil)
+
+	if items[0].Auth != nil {
+		t.Errorf("expected auth cleared, got %+v", items[0].Auth)
+	}
+}

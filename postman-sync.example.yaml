@@ -37,6 +37,13 @@ auth:
     - key: "token"
       value: "{{authToken}}"
       type: "string"
+  # propagation controls how auth is applied to child folders and requests.
+  # When set to "inherit", every folder and request will have its auth cleared
+  # so it inherits from its parent (collection or enclosing folder).
+  # Items with auth type "noauth" are always left untouched.
+  # Folders listed in folder_overrides keep their explicitly configured auth.
+  # Omit this field (or leave blank) to preserve the current behaviour.
+  # propagation: "inherit"
 
 # Collection-level scripts
 scripts:

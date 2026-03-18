@@ -25,6 +25,13 @@ type AuthAttribute struct {
 type Auth struct {
 	Type       string          `yaml:"type"`
 	Attributes []AuthAttribute `yaml:"attributes,omitempty"`
+	// Propagation controls how auth is applied to child folders and requests.
+	// When set to "inherit", all folders and requests (except those with an
+	// explicit folder_override) will have their auth cleared so they inherit
+	// from the collection-level auth. Items with type "noauth" are left
+	// untouched. Omit this field (or leave empty) to preserve the current
+	// behaviour where each item keeps whatever auth was set previously.
+	Propagation string `yaml:"propagation,omitempty"`
 }
 
 // Scripts holds pre-request and test scripts.
@@ -108,6 +115,9 @@ func (c *Config) validate() error {
 	}
 	if c.Auth != nil && c.Auth.Type == "" {
 		return fmt.Errorf("auth.type must not be empty when auth is specified")
+	}
+	if c.Auth != nil && c.Auth.Propagation != "" && c.Auth.Propagation != "inherit" {
+		return fmt.Errorf("auth.propagation must be %q or omitted, got %q", "inherit", c.Auth.Propagation)
 	}
 	return nil
 }

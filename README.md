@@ -61,12 +61,35 @@ export POSTMAN_WORKSPACE_ID=your-workspace-id
 | `doc_links.base_url` | No | - | Base URL for documentation links (omit to disable) |
 | `common_headers` | No | `[]` | Headers injected into every request |
 | `auth` | No | - | Collection-level authentication |
+| `auth.propagation` | No | - | Set to `"inherit"` to clear auth on all folders/requests so they inherit from the collection (see below) |
 | `scripts` | No | - | Collection-level pre-request and test scripts |
 | `folder_overrides` | No | `{}` | Per-folder (tag) auth and script overrides |
 
 ### Auth types
 
 The `auth.type` field supports: `apikey`, `basic`, `bearer`, `oauth1`, `oauth2`, `digest`, `ntlm`, `hawk`, `awsv4`, `edgegrid`, `noauth`.
+
+### Auth propagation
+
+By default, Postman inherits auth from the parent (collection or folder) for any item that has no explicit auth set. However, after a merge cycle, individual folders and requests often accumulate their own explicit auth objects from previous manual edits — which prevents them from picking up changes to the collection-level auth.
+
+Setting `auth.propagation: "inherit"` makes the tool clear the auth field on every folder and leaf request (both `CollectionItem.Auth` and `Request.Auth`), so they all inherit from the collection. The following are always left untouched:
+
+- Items whose auth type is `"noauth"` — they explicitly opt out and should stay that way.
+- Folders listed in `folder_overrides` — the folder keeps its explicitly configured auth. Its children are still processed and will inherit from the overridden folder.
+
+```yaml
+auth:
+  type: "oauth2"
+  attributes:
+    - key: "accessToken"
+      value: "{{oauth2_access_token}}"
+      type: "string"
+    # ... other oauth2 attributes
+  propagation: "inherit"   # clear auth on all folders/requests so they inherit from here
+```
+
+This runs after `folder_overrides` are applied in the pipeline, so override auth is always respected.
 
 ### OAuth2 configuration
 
@@ -154,6 +177,7 @@ auth:
     - key: "token"
       value: "{{authToken}}"
       type: "string"
+  # propagation: "inherit"   # uncomment to clear auth on all folders/requests
 
 scripts:
   prerequest: |
@@ -196,13 +220,15 @@ When a collection with the same name already exists in the workspace:
 | Which endpoints exist | New spec (removed endpoints are dropped) |
 | Endpoint order | Alphabetical (from transform step) |
 | Request URL, method, body, headers | New spec |
-| Auth (item-level and folder-level) | **Preserved** from existing collection |
+| Auth (item-level and folder-level) | **Preserved** from existing collection (unless `auth.propagation: inherit` is set) |
 | Pre-request and test scripts | **Preserved** from existing collection |
 | Saved example responses | **Preserved** from existing collection |
 | Collection-level auth | Config file (if set), otherwise preserved from existing |
 | Collection-level scripts | Config file (if set), otherwise preserved from existing |
 
 On first sync (no existing collection), the config-defined auth/scripts are applied as defaults.
+
+> **Note on `auth.propagation: inherit`**: when this is enabled, item-level and folder-level auth is cleared during the transform step (before merge), so the merge will see `nil` auth on all items and preserve that. Folders with explicit `folder_overrides` keep their auth. Items with `noauth` are never touched.
 
 ## Project structure
 

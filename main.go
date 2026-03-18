@@ -87,6 +87,10 @@ func run(configPath string) error {
 		}
 	}
 
+	if cfg.Auth != nil && cfg.Auth.Propagation == "inherit" {
+		postman.PropagateAuthInherit(col.Items, cfg.FolderOverrides)
+	}
+
 	if cfg.BaseURL != "" {
 		postman.SetBaseURL(col.Items, cfg.BaseURL)
 	}

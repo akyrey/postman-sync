@@ -179,6 +179,62 @@ folder_overrides:
 	}
 }
 
+func TestLoad_AuthPropagationInherit(t *testing.T) {
+	path := writeTemp(t, `
+postman_api_key: "key"
+workspace_id: "ws"
+auth:
+  type: bearer
+  propagation: inherit
+  attributes:
+    - key: token
+      value: "{{tok}}"
+`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Auth == nil {
+		t.Fatal("Auth should not be nil")
+	}
+	if cfg.Auth.Propagation != "inherit" {
+		t.Errorf("Auth.Propagation = %q, want %q", cfg.Auth.Propagation, "inherit")
+	}
+}
+
+func TestLoad_AuthPropagationInvalidValue(t *testing.T) {
+	path := writeTemp(t, `
+postman_api_key: "key"
+workspace_id: "ws"
+auth:
+  type: bearer
+  propagation: copy
+`)
+	_, err := config.Load(path)
+	if err == nil {
+		t.Fatal("expected error for unsupported propagation value, got nil")
+	}
+}
+
+func TestLoad_AuthPropagationOmitted(t *testing.T) {
+	path := writeTemp(t, `
+postman_api_key: "key"
+workspace_id: "ws"
+auth:
+  type: bearer
+  attributes:
+    - key: token
+      value: "{{tok}}"
+`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Auth.Propagation != "" {
+		t.Errorf("Auth.Propagation should be empty when omitted, got %q", cfg.Auth.Propagation)
+	}
+}
+
 func TestLoad_FileNotFound(t *testing.T) {
 	_, err := config.Load(filepath.Join(t.TempDir(), "nonexistent.yaml"))
 	if err == nil {
