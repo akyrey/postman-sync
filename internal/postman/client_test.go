@@ -27,7 +27,7 @@ func TestImportOpenAPI_Success(t *testing.T) {
 			t.Errorf("X-API-Key header missing or wrong: %s", r.Header.Get("X-API-Key"))
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"collections": []map[string]any{{"uid": "abc-123"}},
 		})
 	}))
@@ -46,7 +46,7 @@ func TestImportOpenAPI_Success(t *testing.T) {
 func TestImportOpenAPI_EmptyCollections(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{"collections": []any{}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"collections": []any{}})
 	}))
 	defer srv.Close()
 
@@ -78,7 +78,7 @@ func TestGetCollection_Success(t *testing.T) {
 			t.Errorf("method = %s, want GET", r.Method)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"collection": map[string]any{
 				"info": map[string]any{
 					"name":   "My API",
@@ -123,7 +123,7 @@ func TestDeleteCollection_Success(t *testing.T) {
 			t.Errorf("method = %s, want DELETE", r.Method)
 		}
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{}`))
+		_, _ = w.Write([]byte(`{}`))
 	}))
 	defer srv.Close()
 
@@ -161,7 +161,7 @@ func TestUpdateCollection_SendsCorrectBody(t *testing.T) {
 			t.Errorf("decoding request body: %v", err)
 		}
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{}`))
+		_, _ = w.Write([]byte(`{}`))
 	}))
 	defer srv.Close()
 
@@ -201,9 +201,9 @@ func TestCreateCollection_SendsCorrectBody(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method = %s, want POST", r.Method)
 		}
-		json.NewDecoder(r.Body).Decode(&received)
+		_ = json.NewDecoder(r.Body).Decode(&received)
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{}`))
+		_, _ = w.Write([]byte(`{}`))
 	}))
 	defer srv.Close()
 
@@ -237,7 +237,7 @@ func TestCreateCollection_HTTPError(t *testing.T) {
 func TestGetWorkspaceCollections_ReturnsMappedCollections(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"workspace": map[string]any{
 				"collections": []map[string]any{
 					{"id": "id-1", "name": "Collection A"},
@@ -264,7 +264,7 @@ func TestGetWorkspaceCollections_ReturnsMappedCollections(t *testing.T) {
 func TestGetWorkspaceCollections_EmptyWorkspace(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"workspace": map[string]any{},
 		})
 	}))
@@ -300,12 +300,12 @@ func TestClient_SendsAPIKeyHeader(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotKey = r.Header.Get("X-API-Key")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{}`))
+		_, _ = w.Write([]byte(`{}`))
 	}))
 	defer srv.Close()
 
 	c := NewClient("my-secret-key", "ws").withBaseURL(srv.URL)
-	c.DeleteCollection("x") // use any method that fires a request
+	_ = c.DeleteCollection("x") // use any method that fires a request
 
 	if gotKey != "my-secret-key" {
 		t.Errorf("X-API-Key = %q, want %q", gotKey, "my-secret-key")
