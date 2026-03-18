@@ -31,7 +31,7 @@ Or build from source:
 ```bash
 git clone https://github.com/akyrey/postman-sync.git
 cd postman-sync
-go build -o postman-sync .
+make build
 ```
 
 ## Configuration
@@ -202,13 +202,16 @@ folder_overrides:
 
 ```bash
 # Run with defaults (reads ./postman-sync.yaml)
-./postman-sync
+./bin/postman-sync
 
 # Run with a custom config path
-./postman-sync --config /path/to/config.yaml
+./bin/postman-sync --config /path/to/config.yaml
+
+# Print version
+./bin/postman-sync --version
 
 # Using env vars for secrets
-POSTMAN_API_KEY=xxx POSTMAN_WORKSPACE_ID=yyy ./postman-sync
+POSTMAN_API_KEY=xxx POSTMAN_WORKSPACE_ID=yyy ./bin/postman-sync
 ```
 
 ## Merge behavior
@@ -234,17 +237,22 @@ On first sync (no existing collection), the config-defined auth/scripts are appl
 
 ```
 postman-sync/
-├── main.go                     # CLI entrypoint and pipeline orchestration
-├── config/
-│   └── config.go               # YAML config struct, loader, validation
-├── openapi/
-│   └── loader.go               # Load OpenAPI spec (JSON/YAML) + enum sanitization
-├── postman/
-│   ├── types.go                # Postman Collection v2.1 Go types
-│   ├── client.go               # Postman API HTTP client
-│   ├── transform.go            # Collection transformers (flatten, sort, headers, auth, scripts, base URL, doc links)
-│   └── merge.go                # Name-based recursive merge preserving customizations
+├── cmd/
+│   └── postman-sync/
+│       └── main.go             # CLI entrypoint and pipeline orchestration
+├── internal/
+│   ├── config/
+│   │   └── config.go           # YAML config struct, loader, validation
+│   ├── openapi/
+│   │   └── loader.go           # Load OpenAPI spec (JSON/YAML) + enum sanitization
+│   └── postman/
+│       ├── types.go            # Postman Collection v2.1 Go types
+│       ├── client.go           # Postman API HTTP client
+│       ├── transform.go        # Collection transformers (flatten, sort, headers, auth, scripts, base URL, doc links)
+│       └── merge.go            # Name-based recursive merge preserving customizations
 ├── postman-sync.example.yaml   # Example configuration
+├── Makefile
+├── .goreleaser.yaml
 ├── go.mod
 └── go.sum
 ```
@@ -252,13 +260,19 @@ postman-sync/
 ## Testing
 
 ```bash
-go test ./...
+make test
+```
+
+With race detector:
+
+```bash
+make test-race
 ```
 
 With coverage:
 
 ```bash
-go test ./... -cover
+make test-cover
 ```
 
 ## License

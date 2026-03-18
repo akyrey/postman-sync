@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/akyrey/postman-sync/openapi"
+	"github.com/akyrey/postman-sync/internal/openapi"
 )
 
 // writeFile writes content to a named file inside a temp dir and returns the path.

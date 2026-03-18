@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/akyrey/postman-sync/config"
+	"github.com/akyrey/postman-sync/internal/config"
 )
 
 // writeTemp writes content to a temp file and returns its path.

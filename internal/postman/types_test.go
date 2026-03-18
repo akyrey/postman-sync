@@ -3,7 +3,7 @@ package postman_test
 import (
 	"testing"
 
-	"github.com/akyrey/postman-sync/postman"
+	"github.com/akyrey/postman-sync/internal/postman"
 )
 
 func TestBuildAuth_Bearer(t *testing.T) {

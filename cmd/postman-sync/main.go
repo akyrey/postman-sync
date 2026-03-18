@@ -7,14 +7,23 @@ import (
 	"os"
 	"time"
 
-	"github.com/akyrey/postman-sync/config"
-	"github.com/akyrey/postman-sync/openapi"
-	"github.com/akyrey/postman-sync/postman"
+	"github.com/akyrey/postman-sync/internal/config"
+	"github.com/akyrey/postman-sync/internal/openapi"
+	"github.com/akyrey/postman-sync/internal/postman"
 )
+
+// version is set at build time via -ldflags "-X main.version=x.y.z".
+var version = "dev"
 
 func main() {
 	configPath := flag.String("config", "postman-sync.yaml", "Path to the postman-sync YAML configuration file")
+	showVersion := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("postman-sync %s\n", version)
+		os.Exit(0)
+	}
 
 	start := time.Now()
 

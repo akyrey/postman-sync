@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akyrey/postman-sync/config"
-	"github.com/akyrey/postman-sync/postman"
+	"github.com/akyrey/postman-sync/internal/config"
+	"github.com/akyrey/postman-sync/internal/postman"
 )
 
 // ── helpers ───────────────────────────────────────────────────────────────────

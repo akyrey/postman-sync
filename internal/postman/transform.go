@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/akyrey/postman-sync/config"
+	"github.com/akyrey/postman-sync/internal/config"
 )
 
 // FlattenSingleFolders unwraps any folder that contains exactly one request
