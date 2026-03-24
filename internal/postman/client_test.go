@@ -293,6 +293,228 @@ func TestGetWorkspaceCollections_HTTPError(t *testing.T) {
 	}
 }
 
+// ── GetWorkspaceEnvironments ──────────────────────────────────────────────────
+
+func TestGetWorkspaceEnvironments_ReturnsMappedEnvironments(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"workspace": map[string]any{
+				"environments": []map[string]any{
+					{"id": "id-1", "uid": "uid-1", "name": "Production"},
+					{"id": "id-2", "uid": "", "name": "Staging"},
+				},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv)
+	m, err := c.GetWorkspaceEnvironments()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if m["Production"] != "uid-1" {
+		t.Errorf("Production id = %q, want uid-1", m["Production"])
+	}
+	// Falls back to id when uid is empty.
+	if m["Staging"] != "id-2" {
+		t.Errorf("Staging id = %q, want id-2", m["Staging"])
+	}
+}
+
+func TestGetWorkspaceEnvironments_EmptyWorkspace(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"workspace": map[string]any{},
+		})
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv)
+	m, err := c.GetWorkspaceEnvironments()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(m) != 0 {
+		t.Errorf("expected empty map, got %v", m)
+	}
+}
+
+func TestGetWorkspaceEnvironments_HTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv)
+	_, err := c.GetWorkspaceEnvironments()
+	if err == nil {
+		t.Fatal("expected error for HTTP 403, got nil")
+	}
+}
+
+// ── GetEnvironment ────────────────────────────────────────────────────────────
+
+func TestGetEnvironment_Success(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("method = %s, want GET", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"environment": map[string]any{
+				"id":   "env-id",
+				"name": "Production",
+				"values": []map[string]any{
+					{"key": "BASE_URL", "value": "https://api.example.com", "enabled": true},
+				},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv)
+	env, err := c.GetEnvironment("env-id")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if env.Environment.Name != "Production" {
+		t.Errorf("Name = %q, want %q", env.Environment.Name, "Production")
+	}
+	if len(env.Environment.Values) != 1 || env.Environment.Values[0].Key != "BASE_URL" {
+		t.Errorf("Values = %+v", env.Environment.Values)
+	}
+}
+
+func TestGetEnvironment_HTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv)
+	_, err := c.GetEnvironment("missing")
+	if err == nil {
+		t.Fatal("expected error for HTTP 404, got nil")
+	}
+}
+
+// ── CreateEnvironment ─────────────────────────────────────────────────────────
+
+func TestCreateEnvironment_SendsCorrectBody(t *testing.T) {
+	var received EnvironmentWrapper
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		_ = json.NewDecoder(r.Body).Decode(&received)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv)
+	env := &EnvironmentWrapper{
+		Environment: Environment{Name: "Staging", Values: []EnvironmentValue{}},
+	}
+	if err := c.CreateEnvironment(env); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if received.Environment.Name != "Staging" {
+		t.Errorf("received name = %q, want %q", received.Environment.Name, "Staging")
+	}
+}
+
+func TestCreateEnvironment_HTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "conflict", http.StatusConflict)
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv)
+	err := c.CreateEnvironment(&EnvironmentWrapper{})
+	if err == nil {
+		t.Fatal("expected error for HTTP 409, got nil")
+	}
+}
+
+// ── UpdateEnvironment ─────────────────────────────────────────────────────────
+
+func TestUpdateEnvironment_SendsCorrectBody(t *testing.T) {
+	var received EnvironmentWrapper
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Errorf("method = %s, want PUT", r.Method)
+		}
+		_ = json.NewDecoder(r.Body).Decode(&received)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv)
+	env := &EnvironmentWrapper{
+		Environment: Environment{Name: "Production", Values: []EnvironmentValue{}},
+	}
+	if err := c.UpdateEnvironment("env-id", env); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if received.Environment.Name != "Production" {
+		t.Errorf("received name = %q, want %q", received.Environment.Name, "Production")
+	}
+}
+
+func TestUpdateEnvironment_HTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "bad request", http.StatusBadRequest)
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv)
+	err := c.UpdateEnvironment("env-id", &EnvironmentWrapper{})
+	if err == nil {
+		t.Fatal("expected error for HTTP 400, got nil")
+	}
+}
+
+// ── DeleteEnvironment ─────────────────────────────────────────────────────────
+
+func TestDeleteEnvironment_Success(t *testing.T) {
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		if r.Method != http.MethodDelete {
+			t.Errorf("method = %s, want DELETE", r.Method)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv)
+	if err := c.DeleteEnvironment("env-id"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !called {
+		t.Error("DELETE request was not made")
+	}
+}
+
+func TestDeleteEnvironment_HTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv)
+	err := c.DeleteEnvironment("env-id")
+	if err == nil {
+		t.Fatal("expected error for HTTP 403, got nil")
+	}
+}
+
 // ── API key header ────────────────────────────────────────────────────────────
 
 func TestClient_SendsAPIKeyHeader(t *testing.T) {

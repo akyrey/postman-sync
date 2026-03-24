@@ -153,6 +153,91 @@ func (c *Client) GetWorkspaceCollections() (map[string]string, error) {
 	return m, nil
 }
 
+// GetWorkspaceEnvironments returns a map of environment name → environment UID
+// for all environments in the configured workspace.
+func (c *Client) GetWorkspaceEnvironments() (map[string]string, error) {
+	url := fmt.Sprintf("%s/workspaces/%s", c.baseURL, c.workspaceID)
+	b, err := c.do("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("fetching workspace %q: %w", c.workspaceID, err)
+	}
+
+	var result struct {
+		Workspace struct {
+			Environments []struct {
+				ID   string `json:"id"`
+				UID  string `json:"uid"`
+				Name string `json:"name"`
+			} `json:"environments"`
+		} `json:"workspace"`
+	}
+	if err := json.Unmarshal(b, &result); err != nil {
+		return nil, fmt.Errorf("parsing workspace response: %w", err)
+	}
+
+	m := make(map[string]string, len(result.Workspace.Environments))
+	for _, env := range result.Workspace.Environments {
+		id := env.UID
+		if id == "" {
+			id = env.ID
+		}
+		m[env.Name] = id
+	}
+	return m, nil
+}
+
+// GetEnvironment fetches a full environment by its ID or UID.
+func (c *Client) GetEnvironment(id string) (*EnvironmentWrapper, error) {
+	url := fmt.Sprintf("%s/environments/%s", c.baseURL, id)
+	b, err := c.do("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("fetching environment %q: %w", id, err)
+	}
+
+	var wrapper EnvironmentWrapper
+	if err := json.Unmarshal(b, &wrapper); err != nil {
+		return nil, fmt.Errorf("parsing environment %q: %w", id, err)
+	}
+	return &wrapper, nil
+}
+
+// CreateEnvironment creates a new environment in the workspace.
+func (c *Client) CreateEnvironment(env *EnvironmentWrapper) error {
+	b, err := json.Marshal(env)
+	if err != nil {
+		return fmt.Errorf("marshalling environment: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/environments?workspace=%s", c.baseURL, c.workspaceID)
+	if _, err := c.do("POST", url, b); err != nil {
+		return fmt.Errorf("creating environment: %w", err)
+	}
+	return nil
+}
+
+// UpdateEnvironment replaces an existing environment with new data.
+func (c *Client) UpdateEnvironment(id string, env *EnvironmentWrapper) error {
+	b, err := json.Marshal(env)
+	if err != nil {
+		return fmt.Errorf("marshalling environment: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/environments/%s", c.baseURL, id)
+	if _, err := c.do("PUT", url, b); err != nil {
+		return fmt.Errorf("updating environment %q: %w", id, err)
+	}
+	return nil
+}
+
+// DeleteEnvironment deletes an environment by ID/UID.
+func (c *Client) DeleteEnvironment(id string) error {
+	url := fmt.Sprintf("%s/environments/%s", c.baseURL, id)
+	if _, err := c.do("DELETE", url, nil); err != nil {
+		return fmt.Errorf("deleting environment %q: %w", id, err)
+	}
+	return nil
+}
+
 // do executes an HTTP request with the Postman API key header and returns the
 // response body. Non-2xx responses are returned as errors.
 func (c *Client) do(method, url string, body []byte) ([]byte, error) {

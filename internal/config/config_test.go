@@ -22,11 +22,10 @@ func writeTemp(t *testing.T, content string) string {
 	return f.Name()
 }
 
-func TestLoad_MinimalValid(t *testing.T) {
+func TestLoad_GlobalOnly(t *testing.T) {
 	path := writeTemp(t, `
 postman_api_key: "key123"
 workspace_id: "ws456"
-openapi_path: "./api.json"
 `)
 	cfg, err := config.Load(path)
 	if err != nil {
@@ -38,12 +37,9 @@ openapi_path: "./api.json"
 	if cfg.WorkspaceID != "ws456" {
 		t.Errorf("WorkspaceID = %q, want %q", cfg.WorkspaceID, "ws456")
 	}
-	if cfg.OpenAPIPath != "./api.json" {
-		t.Errorf("OpenAPIPath = %q, want %q", cfg.OpenAPIPath, "./api.json")
-	}
 }
 
-func TestLoad_Defaults(t *testing.T) {
+func TestLoad_OpenAPIDefaults(t *testing.T) {
 	path := writeTemp(t, `
 postman_api_key: "key"
 workspace_id: "ws"
@@ -52,14 +48,57 @@ workspace_id: "ws"
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !cfg.SanitizeEnums {
-		t.Error("SanitizeEnums should default to true")
+	if cfg.OpenAPI == nil {
+		t.Fatal("OpenAPI should not be nil")
+		return
 	}
-	if cfg.BaseURL != "{{baseUrl}}" {
-		t.Errorf("BaseURL = %q, want %q", cfg.BaseURL, "{{baseUrl}}")
+	if !cfg.OpenAPI.SanitizeEnums {
+		t.Error("OpenAPI.SanitizeEnums should default to true")
 	}
-	if cfg.OpenAPIPath != "./openapi.json" {
-		t.Errorf("OpenAPIPath = %q, want %q", cfg.OpenAPIPath, "./openapi.json")
+	if cfg.OpenAPI.BaseURL != "{{baseUrl}}" {
+		t.Errorf("OpenAPI.BaseURL = %q, want %q", cfg.OpenAPI.BaseURL, "{{baseUrl}}")
+	}
+	if cfg.OpenAPI.Path != "./openapi.json" {
+		t.Errorf("OpenAPI.Path = %q, want %q", cfg.OpenAPI.Path, "./openapi.json")
+	}
+}
+
+func TestLoad_ExportDefaults(t *testing.T) {
+	path := writeTemp(t, `
+postman_api_key: "key"
+workspace_id: "ws"
+`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Export == nil {
+		t.Fatal("Export should not be nil")
+		return
+	}
+	if cfg.Export.OutputDir != "./postman-export" {
+		t.Errorf("Export.OutputDir = %q, want %q", cfg.Export.OutputDir, "./postman-export")
+	}
+	if !cfg.Export.Pretty {
+		t.Error("Export.Pretty should default to true")
+	}
+}
+
+func TestLoad_ImportDefaults(t *testing.T) {
+	path := writeTemp(t, `
+postman_api_key: "key"
+workspace_id: "ws"
+`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Import == nil {
+		t.Fatal("Import should not be nil")
+		return
+	}
+	if cfg.Import.InputDir != "./postman-export" {
+		t.Errorf("Import.InputDir = %q, want %q", cfg.Import.InputDir, "./postman-export")
 	}
 }
 
@@ -83,155 +122,269 @@ workspace_id: "file-ws"
 	}
 }
 
-func TestLoad_MissingAPIKey(t *testing.T) {
+func TestLoad_OpenAPISection(t *testing.T) {
+	path := writeTemp(t, `
+postman_api_key: "key"
+workspace_id: "ws"
+openapi:
+  path: "./spec.yaml"
+  base_url: "{{myBase}}"
+  sanitize_enums: false
+  doc_links:
+    base_url: "https://docs.example.com/#tag/"
+  common_headers:
+    - key: X-Tenant
+      value: "{{tenantId}}"
+      disabled: false
+  auth:
+    type: bearer
+    attributes:
+      - key: token
+        value: "{{token}}"
+        type: string
+  scripts:
+    prerequest: "console.log('pre');"
+    test: "pm.test('ok', () => {});"
+  folder_overrides:
+    Pets:
+      auth:
+        type: noauth
+      scripts:
+        test: "pm.test('pets', () => {});"
+`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	o := cfg.OpenAPI
+	if o == nil {
+		t.Fatal("OpenAPI should not be nil")
+		return
+	}
+	if o.Path != "./spec.yaml" {
+		t.Errorf("OpenAPI.Path = %q", o.Path)
+	}
+	if o.SanitizeEnums {
+		t.Error("OpenAPI.SanitizeEnums should be false")
+	}
+	if o.DocLinks == nil || o.DocLinks.BaseURL != "https://docs.example.com/#tag/" {
+		t.Errorf("OpenAPI.DocLinks.BaseURL mismatch: %+v", o.DocLinks)
+	}
+	if len(o.CommonHeaders) != 1 || o.CommonHeaders[0].Key != "X-Tenant" {
+		t.Errorf("OpenAPI.CommonHeaders = %+v", o.CommonHeaders)
+	}
+	if o.Auth == nil || o.Auth.Type != "bearer" {
+		t.Errorf("OpenAPI.Auth = %+v", o.Auth)
+	}
+	if len(o.Auth.Attributes) != 1 || o.Auth.Attributes[0].Key != "token" {
+		t.Errorf("OpenAPI.Auth.Attributes = %+v", o.Auth.Attributes)
+	}
+	if o.Scripts == nil || o.Scripts.PreRequest == "" || o.Scripts.Test == "" {
+		t.Errorf("OpenAPI.Scripts = %+v", o.Scripts)
+	}
+	if _, ok := o.FolderOverrides["Pets"]; !ok {
+		t.Error("OpenAPI.FolderOverrides missing 'Pets' entry")
+	}
+}
+
+func TestLoad_ExportSection(t *testing.T) {
+	path := writeTemp(t, `
+postman_api_key: "key"
+workspace_id: "ws"
+export:
+  output_dir: "./my-export"
+  collections:
+    - "My API"
+    - "Other"
+  environments:
+    - "all"
+  pretty: false
+`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	e := cfg.Export
+	if e.OutputDir != "./my-export" {
+		t.Errorf("Export.OutputDir = %q", e.OutputDir)
+	}
+	if len(e.Collections) != 2 {
+		t.Errorf("Export.Collections = %v", e.Collections)
+	}
+	if len(e.Environments) != 1 || e.Environments[0] != "all" {
+		t.Errorf("Export.Environments = %v", e.Environments)
+	}
+	if e.Pretty {
+		t.Error("Export.Pretty should be false")
+	}
+}
+
+func TestLoad_ImportSection(t *testing.T) {
+	path := writeTemp(t, `
+postman_api_key: "key"
+workspace_id: "ws"
+import:
+  input_dir: "./my-import"
+  collections:
+    names:
+      - "all"
+    strategy: "merge"
+  environments:
+    names:
+      - "Production"
+`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	i := cfg.Import
+	if i.InputDir != "./my-import" {
+		t.Errorf("Import.InputDir = %q", i.InputDir)
+	}
+	if i.Collections == nil || i.Collections.Strategy != "merge" {
+		t.Errorf("Import.Collections = %+v", i.Collections)
+	}
+	if i.Environments == nil || len(i.Environments.Names) != 1 {
+		t.Errorf("Import.Environments = %+v", i.Environments)
+	}
+}
+
+func TestValidateGlobal_MissingAPIKey(t *testing.T) {
 	path := writeTemp(t, `workspace_id: "ws"`)
-	// Make sure env var is not set.
 	t.Setenv("POSTMAN_API_KEY", "")
 
-	_, err := config.Load(path)
-	if err == nil {
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected load error: %v", err)
+	}
+	if err := cfg.ValidateGlobal(); err == nil {
 		t.Fatal("expected error for missing postman_api_key, got nil")
 	}
 }
 
-func TestLoad_MissingWorkspaceID(t *testing.T) {
+func TestValidateGlobal_MissingWorkspaceID(t *testing.T) {
 	path := writeTemp(t, `postman_api_key: "key"`)
 	t.Setenv("POSTMAN_WORKSPACE_ID", "")
 
-	_, err := config.Load(path)
-	if err == nil {
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected load error: %v", err)
+	}
+	if err := cfg.ValidateGlobal(); err == nil {
 		t.Fatal("expected error for missing workspace_id, got nil")
 	}
 }
 
-func TestLoad_AuthTypeRequired(t *testing.T) {
+func TestValidateOpenAPISync_AuthTypeRequired(t *testing.T) {
 	path := writeTemp(t, `
 postman_api_key: "key"
 workspace_id: "ws"
-auth:
-  attributes:
-    - key: token
-      value: "{{tok}}"
+openapi:
+  auth:
+    attributes:
+      - key: token
+        value: "{{tok}}"
 `)
-	_, err := config.Load(path)
-	if err == nil {
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected load error: %v", err)
+	}
+	if err := cfg.ValidateOpenAPISync(); err == nil {
 		t.Fatal("expected error for auth without type, got nil")
 	}
 }
 
-func TestLoad_FullConfig(t *testing.T) {
+func TestValidateOpenAPISync_PropagationInherit(t *testing.T) {
 	path := writeTemp(t, `
 postman_api_key: "key"
 workspace_id: "ws"
-openapi_path: "./spec.yaml"
-base_url: "{{myBase}}"
-sanitize_enums: false
-doc_links:
-  base_url: "https://docs.example.com/#tag/"
-common_headers:
-  - key: X-Tenant
-    value: "{{tenantId}}"
-    disabled: false
-auth:
-  type: bearer
-  attributes:
-    - key: token
-      value: "{{token}}"
-      type: string
-scripts:
-  prerequest: "console.log('pre');"
-  test: "pm.test('ok', () => {});"
-folder_overrides:
-  Pets:
-    auth:
-      type: noauth
-    scripts:
-      test: "pm.test('pets', () => {});"
+openapi:
+  auth:
+    type: bearer
+    propagation: inherit
+    attributes:
+      - key: token
+        value: "{{tok}}"
 `)
 	cfg, err := config.Load(path)
 	if err != nil {
+		t.Fatalf("unexpected load error: %v", err)
+	}
+	if err := cfg.ValidateOpenAPISync(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-
-	if cfg.OpenAPIPath != "./spec.yaml" {
-		t.Errorf("OpenAPIPath = %q", cfg.OpenAPIPath)
-	}
-	if cfg.SanitizeEnums {
-		t.Error("SanitizeEnums should be false")
-	}
-	if cfg.DocLinks == nil || cfg.DocLinks.BaseURL != "https://docs.example.com/#tag/" {
-		t.Errorf("DocLinks.BaseURL mismatch: %+v", cfg.DocLinks)
-	}
-	if len(cfg.CommonHeaders) != 1 || cfg.CommonHeaders[0].Key != "X-Tenant" {
-		t.Errorf("CommonHeaders = %+v", cfg.CommonHeaders)
-	}
-	if cfg.Auth == nil || cfg.Auth.Type != "bearer" {
-		t.Errorf("Auth = %+v", cfg.Auth)
-	}
-	if len(cfg.Auth.Attributes) != 1 || cfg.Auth.Attributes[0].Key != "token" {
-		t.Errorf("Auth.Attributes = %+v", cfg.Auth.Attributes)
-	}
-	if cfg.Scripts == nil || cfg.Scripts.PreRequest == "" || cfg.Scripts.Test == "" {
-		t.Errorf("Scripts = %+v", cfg.Scripts)
-	}
-	if _, ok := cfg.FolderOverrides["Pets"]; !ok {
-		t.Error("FolderOverrides missing 'Pets' entry")
+	if cfg.OpenAPI.Auth.Propagation != "inherit" {
+		t.Errorf("Auth.Propagation = %q, want %q", cfg.OpenAPI.Auth.Propagation, "inherit")
 	}
 }
 
-func TestLoad_AuthPropagationInherit(t *testing.T) {
+func TestValidateOpenAPISync_PropagationInvalidValue(t *testing.T) {
 	path := writeTemp(t, `
 postman_api_key: "key"
 workspace_id: "ws"
-auth:
-  type: bearer
-  propagation: inherit
-  attributes:
-    - key: token
-      value: "{{tok}}"
+openapi:
+  auth:
+    type: bearer
+    propagation: copy
 `)
 	cfg, err := config.Load(path)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("unexpected load error: %v", err)
 	}
-	if cfg.Auth == nil {
-		t.Fatal("Auth should not be nil")
-	}
-	if cfg.Auth.Propagation != "inherit" {
-		t.Errorf("Auth.Propagation = %q, want %q", cfg.Auth.Propagation, "inherit")
-	}
-}
-
-func TestLoad_AuthPropagationInvalidValue(t *testing.T) {
-	path := writeTemp(t, `
-postman_api_key: "key"
-workspace_id: "ws"
-auth:
-  type: bearer
-  propagation: copy
-`)
-	_, err := config.Load(path)
-	if err == nil {
+	if err := cfg.ValidateOpenAPISync(); err == nil {
 		t.Fatal("expected error for unsupported propagation value, got nil")
 	}
 }
 
-func TestLoad_AuthPropagationOmitted(t *testing.T) {
+func TestValidateExport_NoEntities(t *testing.T) {
 	path := writeTemp(t, `
 postman_api_key: "key"
 workspace_id: "ws"
-auth:
-  type: bearer
-  attributes:
-    - key: token
-      value: "{{tok}}"
+export:
+  output_dir: "./out"
 `)
 	cfg, err := config.Load(path)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("unexpected load error: %v", err)
 	}
-	if cfg.Auth.Propagation != "" {
-		t.Errorf("Auth.Propagation should be empty when omitted, got %q", cfg.Auth.Propagation)
+	if err := cfg.ValidateExport(); err == nil {
+		t.Fatal("expected error when no entity types selected, got nil")
+	}
+}
+
+func TestValidateImport_InvalidStrategy(t *testing.T) {
+	path := writeTemp(t, `
+postman_api_key: "key"
+workspace_id: "ws"
+import:
+  collections:
+    names: ["all"]
+    strategy: "clone"
+`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected load error: %v", err)
+	}
+	if err := cfg.ValidateImport(); err == nil {
+		t.Fatal("expected error for invalid import strategy, got nil")
+	}
+}
+
+func TestValidateImport_EnvironmentsNoMerge(t *testing.T) {
+	path := writeTemp(t, `
+postman_api_key: "key"
+workspace_id: "ws"
+import:
+  environments:
+    names: ["all"]
+    strategy: "merge"
+`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected load error: %v", err)
+	}
+	if err := cfg.ValidateImport(); err == nil {
+		t.Fatal("expected error for merge strategy on environments, got nil")
 	}
 }
 

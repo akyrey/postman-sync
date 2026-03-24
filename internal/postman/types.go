@@ -133,6 +133,26 @@ type Variable struct {
 	Name  string `json:"name,omitempty"`
 }
 
+// EnvironmentWrapper is the root envelope for Postman environment API responses.
+type EnvironmentWrapper struct {
+	Environment Environment `json:"environment"`
+}
+
+// Environment is a Postman environment with a list of variables.
+type Environment struct {
+	ID     string             `json:"id,omitempty"`
+	Name   string             `json:"name"`
+	Values []EnvironmentValue `json:"values"`
+}
+
+// EnvironmentValue is a single variable in a Postman environment.
+type EnvironmentValue struct {
+	Key     string `json:"key"`
+	Value   string `json:"value"`
+	Type    string `json:"type,omitempty"`
+	Enabled bool   `json:"enabled"`
+}
+
 // BuildAuth constructs a postman.Auth from the given type and attributes.
 // Attributes are placed under the matching type key.
 func BuildAuth(authType string, attrs []AuthAttribute) (*Auth, error) {
