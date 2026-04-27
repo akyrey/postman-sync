@@ -13,7 +13,7 @@ Project context for Claude Code sessions.
 ## Tech stack
 
 - **Language**: Go 1.22+
-- **Dependencies**: `gopkg.in/yaml.v3`, `github.com/spf13/cobra`
+- **Dependencies**: `gopkg.in/yaml.v3`, `github.com/spf13/cobra`, `github.com/pb33f/libopenapi`
 - **Build**: `make build` (outputs to `bin/postman-sync`) or `go build -o bin/postman-sync ./cmd/postman-sync`
 - **Tests**: `go test ./...`
 
@@ -27,7 +27,7 @@ cmd/postman-sync/
   import_cmd.go    # import subcommand + runImport pipeline
   fileutil.go      # Shared file I/O helpers: sanitizeFilename, writeJSON, readJSON, listEntityFiles, shouldImport
 internal/config/config.go    # YAML config structs (nested: OpenAPIConfig, ExportConfig, ImportConfig), loading, per-command validation
-internal/openapi/loader.go   # Load JSON/YAML OpenAPI specs, enum sanitization
+internal/openapi/loader.go   # Load JSON/YAML OpenAPI specs, multi-file bundling ($ref resolution), enum sanitization
 internal/postman/types.go    # Postman Collection v2.1 types + Environment/EnvironmentValue types
 internal/postman/client.go   # Postman API HTTP client (collections + environments CRUD)
 internal/postman/transform.go# Collection transformers (flatten, sort, headers, auth, scripts, base URL, doc links)
@@ -38,6 +38,7 @@ internal/postman/merge.go    # Name-based recursive merge preserving auth/events
 
 - **Cobra subcommands**: root command dispatches to `openapi-sync`, `export`, `import`. `--config` is a persistent flag shared by all. Per-command flags override config file values.
 - **Config structure**: global fields (`postman_api_key`, `workspace_id`) at root; OpenAPI-specific config under `openapi:`; export config under `export:`; import config under `import:`. Validation is per-command (`ValidateGlobal`, `ValidateOpenAPISync`, `ValidateExport`, `ValidateImport`).
+- **Multi-file spec support**: `openapi.path` can be a directory. `LoadAndBundle(path, rootFile)` in `internal/openapi/loader.go` uses `pb33f/libopenapi` bundler to resolve all external `$ref`s into a single document before import. Auto-detects root spec by well-known names; `openapi.root_file` / `--openapi-root-file` overrides auto-detection.
 - **CollectionItem union type**: A single struct with `Items *[]CollectionItem` field. `nil` = leaf request, non-nil = folder. Check via `IsFolder()`.
 - **Merge preserves customizations**: When merging old + new items by name, `auth`, `event` (scripts), and `response` (saved examples) are kept from the old collection. Request URL/method/body/headers come from the new spec. Items removed from the spec are dropped.
 - **Auth propagation**: `openapi.auth.propagation: "inherit"` clears `CollectionItem.Auth` and `Request.Auth` on every folder and leaf request (except `noauth` items and folders with a `folder_override`) so they inherit from the collection. Implemented in `PropagateAuthInherit` in `internal/postman/transform.go`, called after `ApplyFolderOverrides`.

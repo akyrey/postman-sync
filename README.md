@@ -10,7 +10,7 @@ Inspired by [dmiska25/postman_sync.py](https://gist.github.com/dmiska25/e807fe46
 
 ## How openapi-sync works
 
-1. Loads an OpenAPI spec (JSON or YAML) from disk
+1. Loads an OpenAPI spec (JSON or YAML) from a file or directory; when a directory is given, all external `$ref` references are resolved and bundled into a single document
 2. Optionally sanitizes enum values to reduce diff noise
 3. Imports the spec into Postman via the API (creates a temporary collection)
 4. Downloads the generated collection, then deletes the temporary one
@@ -97,7 +97,8 @@ import:
 
 | Field | Default | Description |
 |---|---|---|
-| `openapi.path` | `./openapi.json` | Path to the OpenAPI spec (JSON or YAML) |
+| `openapi.path` | `./openapi.json` | Path to the OpenAPI spec file (JSON or YAML) or a directory containing a multi-file spec |
+| `openapi.root_file` | — | Root spec filename when `openapi.path` is a directory (auto-detected if omitted) |
 | `openapi.base_url` | `{{baseUrl}}` | Base URL for all requests (Postman variable recommended) |
 | `openapi.sanitize_enums` | `true` | Replace enum values with `<enum>` to reduce diff noise |
 | `openapi.doc_links.base_url` | — | Base URL for documentation links (omit to disable) |
@@ -131,7 +132,9 @@ import:
 ```bash
 # Sync an OpenAPI spec into Postman
 ./bin/postman-sync openapi-sync
-./bin/postman-sync openapi-sync --openapi-path ./api.yaml   # override spec path
+./bin/postman-sync openapi-sync --openapi-path ./api.yaml          # single file
+./bin/postman-sync openapi-sync --openapi-path ./specs/            # directory (auto-detect root)
+./bin/postman-sync openapi-sync --openapi-path ./specs/ --openapi-root-file main.yaml  # explicit root
 ./bin/postman-sync openapi-sync --config /path/to/config.yaml
 
 # Export collections and environments to disk
@@ -184,6 +187,32 @@ When a collection with the same name already exists in the workspace:
 | Collection-level scripts | Config file (if set), otherwise preserved from existing |
 
 On first sync (no existing collection), config-defined auth/scripts are applied as defaults.
+
+## Multi-file OpenAPI specs
+
+When your OpenAPI spec is split across multiple files using `$ref` references to local files, point `openapi.path` at the directory (or the root file) and the tool will bundle everything into a single document before sending it to Postman.
+
+```yaml
+# postman-sync.yaml
+openapi:
+  path: "./specs"           # directory containing openapi.yaml and referenced files
+  # root_file: "main.yaml"  # optional — only needed when auto-detection is ambiguous
+```
+
+Or via CLI flags:
+
+```bash
+./bin/postman-sync openapi-sync --openapi-path ./specs/
+./bin/postman-sync openapi-sync --openapi-path ./specs/ --openapi-root-file main.yaml
+```
+
+**Root file auto-detection** (when `path` is a directory and `root_file` is not set):
+
+1. Looks for well-known names in order: `openapi.yaml`, `openapi.yml`, `openapi.json`, `swagger.yaml`, `swagger.yml`, `swagger.json`
+2. If none found, uses the single `.yaml`/`.yml`/`.json` file at the top level of the directory
+3. Returns an error if zero or multiple files are found — use `root_file` to resolve ambiguity
+
+**Note**: All `$ref` references must point to local files. Remote URL references (`http://`) are not resolved.
 
 ## import merge strategy
 

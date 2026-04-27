@@ -10,8 +10,14 @@ workspace_id: ""           # Postman workspace ID (prefer env var POSTMAN_WORKSP
 # ── openapi-sync command ──────────────────────────────────────────────────────
 # Configuration for: postman-sync openapi-sync
 openapi:
-  # Input OpenAPI spec path (JSON or YAML)
+  # Input OpenAPI spec: path to a single file (JSON or YAML) or a directory
+  # containing a multi-file spec. When a directory is given, all external $ref
+  # references are resolved and bundled before import.
   path: "./openapi.json"
+
+  # Root spec filename when path is a directory (auto-detected if omitted).
+  # Only needed when the directory contains multiple spec files with non-standard names.
+  # root_file: "main.yaml"
 
   # Base URL to set on every request (Postman variable reference recommended)
   base_url: "{{baseUrl}}"

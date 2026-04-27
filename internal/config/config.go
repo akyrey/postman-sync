@@ -54,6 +54,7 @@ type DocLinks struct {
 // OpenAPIConfig holds all configuration for the openapi-sync command.
 type OpenAPIConfig struct {
 	Path            string                    `yaml:"path"`
+	RootFile        string                    `yaml:"root_file,omitempty"`
 	BaseURL         string                    `yaml:"base_url"`
 	SanitizeEnums   bool                      `yaml:"sanitize_enums"`
 	DocLinks        *DocLinks                 `yaml:"doc_links,omitempty"`

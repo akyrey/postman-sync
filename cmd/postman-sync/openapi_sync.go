@@ -14,6 +14,7 @@ import (
 
 func newOpenAPISyncCmd() *cobra.Command {
 	var openapiPath string
+	var openapiRootFile string
 
 	cmd := &cobra.Command{
 		Use:   "openapi-sync",
@@ -21,7 +22,11 @@ func newOpenAPISyncCmd() *cobra.Command {
 		Long: `Loads an OpenAPI spec, imports it into Postman as a temporary collection,
 applies configured transforms (auth, headers, scripts, folder overrides, base URL,
 doc links), merges the result into the existing collection (or creates a new one),
-then deletes the temporary collection.`,
+then deletes the temporary collection.
+
+The spec path may point to a single file (JSON or YAML) or a directory containing
+a multi-file spec. When a directory is given, external $ref references are resolved
+and bundled into a single document before import.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load(cfgFile)
 			if err != nil {
@@ -32,6 +37,9 @@ then deletes the temporary collection.`,
 			}
 			if cmd.Flags().Changed("openapi-path") {
 				cfg.OpenAPI.Path = openapiPath
+			}
+			if cmd.Flags().Changed("openapi-root-file") {
+				cfg.OpenAPI.RootFile = openapiRootFile
 			}
 			if err := cfg.ValidateOpenAPISync(); err != nil {
 				return err
@@ -46,7 +54,8 @@ then deletes the temporary collection.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&openapiPath, "openapi-path", "", "Path to the OpenAPI spec (overrides config openapi.path)")
+	cmd.Flags().StringVar(&openapiPath, "openapi-path", "", "Path to the OpenAPI spec file or directory (overrides config openapi.path)")
+	cmd.Flags().StringVar(&openapiRootFile, "openapi-root-file", "", "Root spec filename when --openapi-path is a directory (overrides config openapi.root_file)")
 	return cmd
 }
 
@@ -55,7 +64,7 @@ func runOpenAPISync(cfg *config.Config) error {
 
 	// ── 1. Load & optionally sanitise the OpenAPI spec ─────────────────────
 	fmt.Printf("Loading OpenAPI spec from %q...\n", o.Path)
-	spec, err := openapi.Load(o.Path)
+	spec, err := openapi.LoadAndBundle(o.Path, o.RootFile)
 	if err != nil {
 		return err
 	}

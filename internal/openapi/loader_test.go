@@ -3,6 +3,7 @@ package openapi_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/akyrey/postman-sync/internal/openapi"
@@ -12,6 +13,19 @@ import (
 func writeFile(t *testing.T, name, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("writing %s: %v", name, err)
+	}
+	return path
+}
+
+// writeFileInDir writes content to a named file (possibly in a subdirectory) inside dir.
+func writeFileInDir(t *testing.T, dir, name, content string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("creating directory for %s: %v", name, err)
+	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("writing %s: %v", name, err)
 	}
@@ -180,5 +194,158 @@ func TestSanitizeEnums_PreservesOtherKeys(t *testing.T) {
 	}
 	if spec["description"] != "a status" {
 		t.Errorf("description changed unexpectedly: %v", spec["description"])
+	}
+}
+
+// ── LoadAndBundle ─────────────────────────────────────────────────────────────
+
+const minimalSpec = `openapi: "3.0.0"
+info:
+  title: TestAPI
+  version: "1.0.0"
+paths: {}
+`
+
+func TestLoadAndBundle_SingleFileYAML(t *testing.T) {
+	path := writeFile(t, "openapi.yaml", minimalSpec)
+	spec, err := openapi.LoadAndBundle(path, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if spec["openapi"] != "3.0.0" {
+		t.Errorf("openapi = %v", spec["openapi"])
+	}
+}
+
+func TestLoadAndBundle_SingleFileJSON(t *testing.T) {
+	path := writeFile(t, "openapi.json", `{"openapi":"3.0.0","info":{"title":"T","version":"1.0"},"paths":{}}`)
+	spec, err := openapi.LoadAndBundle(path, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if spec["openapi"] != "3.0.0" {
+		t.Errorf("openapi = %v", spec["openapi"])
+	}
+}
+
+func TestLoadAndBundle_ExternalRef(t *testing.T) {
+	dir := t.TempDir()
+	writeFileInDir(t, dir, "openapi.yaml", `openapi: "3.0.0"
+info:
+  title: TestAPI
+  version: "1.0.0"
+paths: {}
+components:
+  schemas:
+    User:
+      $ref: "./schemas/User.yaml"
+`)
+	writeFileInDir(t, dir, "schemas/User.yaml", `type: object
+properties:
+  id:
+    type: string
+`)
+
+	spec, err := openapi.LoadAndBundle(dir, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	components, ok := spec["components"].(map[string]any)
+	if !ok {
+		t.Fatalf("components is not a map: %T", spec["components"])
+	}
+	schemas, ok := components["schemas"].(map[string]any)
+	if !ok {
+		t.Fatalf("schemas is not a map: %T", components["schemas"])
+	}
+	user, ok := schemas["User"].(map[string]any)
+	if !ok {
+		t.Fatalf("User schema is not a map: %T", schemas["User"])
+	}
+	if user["type"] != "object" {
+		t.Errorf("User.type = %v, want object — external $ref was not resolved", user["type"])
+	}
+}
+
+func TestLoadAndBundle_DirectoryAutoDetect(t *testing.T) {
+	dir := t.TempDir()
+	writeFileInDir(t, dir, "openapi.yaml", minimalSpec)
+
+	spec, err := openapi.LoadAndBundle(dir, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if spec["openapi"] != "3.0.0" {
+		t.Errorf("openapi = %v", spec["openapi"])
+	}
+}
+
+func TestLoadAndBundle_DirectoryWithRootFile(t *testing.T) {
+	dir := t.TempDir()
+	writeFileInDir(t, dir, "main.yaml", minimalSpec)
+
+	spec, err := openapi.LoadAndBundle(dir, "main.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if spec["openapi"] != "3.0.0" {
+		t.Errorf("openapi = %v", spec["openapi"])
+	}
+}
+
+func TestLoadAndBundle_DirectoryWithRootFileNotFound(t *testing.T) {
+	dir := t.TempDir()
+	_, err := openapi.LoadAndBundle(dir, "missing.yaml")
+	if err == nil {
+		t.Fatal("expected error for missing root file, got nil")
+	}
+}
+
+func TestLoadAndBundle_DirectoryNoSpec(t *testing.T) {
+	dir := t.TempDir()
+	_, err := openapi.LoadAndBundle(dir, "")
+	if err == nil {
+		t.Fatal("expected error for directory with no spec, got nil")
+	}
+}
+
+func TestLoadAndBundle_DirectoryAmbiguous(t *testing.T) {
+	dir := t.TempDir()
+	writeFileInDir(t, dir, "service-a.yaml", minimalSpec)
+	writeFileInDir(t, dir, "service-b.yaml", minimalSpec)
+
+	_, err := openapi.LoadAndBundle(dir, "")
+	if err == nil {
+		t.Fatal("expected error for ambiguous directory, got nil")
+	}
+	if !strings.Contains(err.Error(), "--openapi-root-file") {
+		t.Errorf("error should suggest --openapi-root-file, got: %v", err)
+	}
+}
+
+func TestLoadAndBundle_PathNotFound(t *testing.T) {
+	_, err := openapi.LoadAndBundle(filepath.Join(t.TempDir(), "missing.yaml"), "")
+	if err == nil {
+		t.Fatal("expected error for missing path, got nil")
+	}
+}
+
+func TestFindRootSpec_Priority(t *testing.T) {
+	// When both openapi.yaml and swagger.json are present, openapi.yaml should win.
+	dir := t.TempDir()
+	writeFileInDir(t, dir, "swagger.json", `{"openapi":"3.0.0","info":{"title":"Swagger","version":"1.0"},"paths":{}}`)
+	writeFileInDir(t, dir, "openapi.yaml", minimalSpec)
+
+	spec, err := openapi.LoadAndBundle(dir, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	info, ok := spec["info"].(map[string]any)
+	if !ok {
+		t.Fatalf("info is not a map")
+	}
+	if info["title"] != "TestAPI" {
+		t.Errorf("title = %v, want TestAPI (openapi.yaml should take priority over swagger.json)", info["title"])
 	}
 }
