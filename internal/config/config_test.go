@@ -402,3 +402,67 @@ func TestLoad_InvalidYAML(t *testing.T) {
 		t.Fatal("expected error for invalid YAML, got nil")
 	}
 }
+
+func TestLoad_PreserveRequestDataDefaultsToTrue(t *testing.T) {
+	path := writeTemp(t, `
+postman_api_key: "key"
+workspace_id: "ws"
+`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.OpenAPI.PreserveRequestData {
+		t.Error("OpenAPI.PreserveRequestData should default to true")
+	}
+}
+
+func TestLoad_PreserveRequestDataCanBeDisabled(t *testing.T) {
+	path := writeTemp(t, `
+postman_api_key: "key"
+workspace_id: "ws"
+openapi:
+  preserve_request_data: false
+`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.OpenAPI.PreserveRequestData {
+		t.Error("OpenAPI.PreserveRequestData should be false")
+	}
+}
+
+func TestEffectiveImportOptions_DisablesOptionalParametersByDefault(t *testing.T) {
+	path := writeTemp(t, `
+postman_api_key: "key"
+workspace_id: "ws"
+`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := cfg.OpenAPI.EffectiveImportOptions()
+	if got["enableOptionalParameters"] != false {
+		t.Errorf("enableOptionalParameters = %v, want false", got["enableOptionalParameters"])
+	}
+}
+
+func TestEffectiveImportOptions_UserValuesOverrideDefaults(t *testing.T) {
+	path := writeTemp(t, `
+postman_api_key: "key"
+workspace_id: "ws"
+openapi:
+  import_options:
+    enableOptionalParameters: true
+    parametersResolution: "Example"
+`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := cfg.OpenAPI.EffectiveImportOptions()
+	if got["enableOptionalParameters"] != true || got["parametersResolution"] != "Example" {
+		t.Errorf("import options = %v", got)
+	}
+}

@@ -9,7 +9,22 @@ package postman
 //   - Items only in new: added as-is (new endpoints).
 //   - Items only in old: removed (spec is source of truth).
 //   - Folders are recursed into.
+//
+// Request data (headers, params, body) always comes from new; use
+// MergeItemsWith to preserve the user's edits.
 func MergeItems(old, new []CollectionItem) []CollectionItem {
+	return MergeItemsWith(old, new, MergeOptions{})
+}
+
+// MergeOptions tunes how MergeItemsWith reconciles matched leaf requests.
+type MergeOptions struct {
+	// PreserveRequestData keeps header/param values, enabled state and body
+	// edits from old, see mergeRequest.
+	PreserveRequestData bool
+}
+
+// MergeItemsWith is MergeItems with configurable request merging.
+func MergeItemsWith(old, new []CollectionItem, opts MergeOptions) []CollectionItem {
 	oldMap := make(map[string]*CollectionItem, len(old))
 	for i := range old {
 		item := old[i] // local copy
@@ -37,7 +52,7 @@ func MergeItems(old, new []CollectionItem) []CollectionItem {
 			if n.Items != nil {
 				newChildren = *n.Items
 			}
-			merged := MergeItems(oldChildren, newChildren)
+			merged := MergeItemsWith(oldChildren, newChildren, opts)
 
 			// Carry over folder-level auth and events from old if new doesn't
 			// define them (they were set by config on first run and may have
@@ -56,7 +71,7 @@ func MergeItems(old, new []CollectionItem) []CollectionItem {
 
 		// Both are leaf requests: update request data from new, preserve
 		// auth and events from old.
-		out := mergeLeaf(*o, n)
+		out := mergeLeaf(*o, n, opts)
 		result = append(result, out)
 	}
 
@@ -65,9 +80,13 @@ func MergeItems(old, new []CollectionItem) []CollectionItem {
 
 // mergeLeaf merges a new leaf request item into the old one, preserving the
 // old item's auth and event (scripts) customisations.
-func mergeLeaf(old, new CollectionItem) CollectionItem {
+func mergeLeaf(old, new CollectionItem, opts MergeOptions) CollectionItem {
 	out := new      // start with the new item (new URL, method, body, headers, description)
 	out.ID = old.ID // preserve Postman internal ID to avoid phantom diffs
+
+	if opts.PreserveRequestData {
+		out.Request = mergeRequest(old.Request, new.Request)
+	}
 
 	// Preserve manual auth customisations.
 	if old.Auth != nil {

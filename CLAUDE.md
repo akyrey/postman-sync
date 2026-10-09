@@ -31,7 +31,10 @@ internal/openapi/loader.go   # Load JSON/YAML OpenAPI specs, multi-file bundling
 internal/postman/types.go    # Postman Collection v2.1 types + Environment/EnvironmentValue types
 internal/postman/client.go   # Postman API HTTP client (collections + environments CRUD)
 internal/postman/transform.go# Collection transformers (flatten, sort, headers, auth, scripts, base URL, doc links)
+internal/postman/types_json.go # JSON (un)marshalling that keeps unmodelled fields in `Extra` (helpers in extra.go)
 internal/postman/merge.go    # Name-based recursive merge preserving auth/events/responses
+internal/postman/merge_request.go # Preserving merge of headers/params/path vars/form fields/body (MergeOptions.PreserveRequestData)
+internal/postman/jsonmerge.go # Order-preserving raw JSON body merge
 ```
 
 ## Key design decisions
@@ -40,7 +43,9 @@ internal/postman/merge.go    # Name-based recursive merge preserving auth/events
 - **Config structure**: global fields (`postman_api_key`, `workspace_id`) at root; OpenAPI-specific config under `openapi:`; export config under `export:`; import config under `import:`. Validation is per-command (`ValidateGlobal`, `ValidateOpenAPISync`, `ValidateExport`, `ValidateImport`).
 - **Multi-file spec support**: `openapi.path` can be a directory. `LoadAndBundle(path, rootFile)` in `internal/openapi/loader.go` uses `pb33f/libopenapi` bundler to resolve all external `$ref`s into a single document before import. Auto-detects root spec by well-known names; `openapi.root_file` / `--openapi-root-file` overrides auto-detection.
 - **CollectionItem union type**: A single struct with `Items *[]CollectionItem` field. `nil` = leaf request, non-nil = folder. Check via `IsFolder()`.
-- **Merge preserves customizations**: When merging old + new items by name, `auth`, `event` (scripts), and `response` (saved examples) are kept from the old collection. Request URL/method/body/headers come from the new spec. Items removed from the spec are dropped.
+- **Lossless round-trip**: Postman's format is much richer than our structs. Every collection/environment type has an `Extra` field (`json:"-"`) and custom JSON methods (`types_json.go`) that keep unmodelled fields (descriptions, body options, `protocolProfileBehavior`, ...). Never drop these methods or the fetch → update cycle silently loses data. When adding a type, add an alias + methods there.
+- **Import options**: `openapi.import_options` is forwarded to Postman's importer, overlaying `config.DefaultImportOptions()` (`enableOptionalParameters: false`, so optional params are generated disabled and only required ones enabled).
+- **Merge preserves customizations**: When merging old + new items by name, `auth`, `event` (scripts), and `response` (saved examples) are kept from the old collection. Items removed from the spec are dropped. With `MergeOptions.PreserveRequestData` (openapi-sync default, `openapi.preserve_request_data` / `--no-preserve`), headers/query params/form fields keep old value + disabled state by key (description from the spec), entries without a description are treated as hand-added and kept, path vars keep old values, and raw JSON bodies are merged field by field. `MergeItems` (used by `import --strategy merge`) keeps spec-wins request data. Common headers/query params are re-applied after the merge so config wins.
 - **Auth propagation**: `openapi.auth.propagation: "inherit"` clears `CollectionItem.Auth` and `Request.Auth` on every folder and leaf request (except `noauth` items and folders with a `folder_override`) so they inherit from the collection. Implemented in `PropagateAuthInherit` in `internal/postman/transform.go`, called after `ApplyFolderOverrides`.
 - **Client testability**: The `Client` struct has an unexported `baseURL` field and `withBaseURL()` method. Client tests use `httptest.NewServer` and are white-box (same package) to inject the test server URL.
 - **Transform functions are pure**: They take `[]CollectionItem` and return/mutate in place. No API calls. Easy to test.
@@ -139,11 +144,11 @@ import:                # config for import command
 
 1. Load config (`config.Load`) + `ValidateGlobal` + `ValidateOpenAPISync`
 2. Load OpenAPI spec (`openapi.Load`), optionally sanitize enums
-3. Import spec into Postman API → temporary collection UID
+3. Import spec into Postman API (with `EffectiveImportOptions()`) → temporary collection UID
 4. Fetch the generated collection, delete the temporary one
 5. Transform: flatten → sort → headers → auth → scripts → folder overrides → auth propagation (if `inherit`) → base URL → doc links
 6. Look up existing collection by name in workspace
-7. If exists: fetch old, `MergeItems(old, new)`, update
+7. If exists: fetch old, `MergeItemsWith(old, new, opts)`, re-apply common headers/query params, update
 8. If not: strip IDs, create new collection
 
 ## export pipeline flow

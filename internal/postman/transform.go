@@ -75,6 +75,41 @@ func applyHeader(headers *[]Header, h config.Header) {
 	})
 }
 
+// ApplyCommonQueryParams injects the configured query parameters into every
+// leaf request. If a parameter with the same key already exists, its value and
+// disabled flag are updated. Otherwise the parameter is appended.
+func ApplyCommonQueryParams(items []CollectionItem, params []config.QueryParam) {
+	for i := range items {
+		if items[i].IsFolder() {
+			ApplyCommonQueryParams(*items[i].Items, params)
+			continue
+		}
+		if items[i].Request == nil || items[i].Request.URL == nil {
+			continue
+		}
+		for _, p := range params {
+			applyQueryParam(&items[i].Request.URL.Query, p)
+		}
+	}
+}
+
+func applyQueryParam(query *[]URLParam, p config.QueryParam) {
+	key := p.Key
+	val := p.Value
+	for i, existing := range *query {
+		if existing.Key != nil && strings.EqualFold(*existing.Key, key) {
+			(*query)[i].Value = &val
+			(*query)[i].Disabled = p.Disabled
+			return
+		}
+	}
+	*query = append(*query, URLParam{
+		Key:      &key,
+		Value:    &val,
+		Disabled: p.Disabled,
+	})
+}
+
 // ApplyAuth sets the collection-level auth from config.
 func ApplyAuth(col *Collection, authCfg *config.Auth) error {
 	if authCfg == nil {

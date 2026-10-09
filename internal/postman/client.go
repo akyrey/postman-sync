@@ -40,12 +40,16 @@ func (c *Client) withBaseURL(u string) *Client {
 }
 
 // ImportOpenAPI uploads an OpenAPI spec to Postman and returns the UID of
-// the temporary collection that Postman generates.
-func (c *Client) ImportOpenAPI(spec map[string]any) (string, error) {
+// the temporary collection that Postman generates. options are forwarded to
+// Postman's OpenAPI importer (e.g. enableOptionalParameters); nil sends none.
+func (c *Client) ImportOpenAPI(spec map[string]any, options map[string]any) (string, error) {
+	if options == nil {
+		options = map[string]any{}
+	}
 	payload := map[string]any{
 		"type":    "json",
 		"input":   spec,
-		"options": map[string]any{},
+		"options": options,
 	}
 
 	b, err := json.Marshal(payload)

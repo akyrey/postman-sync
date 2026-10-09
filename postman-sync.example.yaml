@@ -25,12 +25,28 @@ openapi:
   # Replace enum values with a placeholder to reduce diff noise (default: true)
   sanitize_enums: true
 
+  # Options forwarded to Postman's OpenAPI importer (openapi-to-postman).
+  # Defaults: enableOptionalParameters: false, so optional query params and
+  # headers are generated disabled and only those the spec marks as required
+  # are enabled. Any other importer option can be added here.
+  # import_options:
+  #   enableOptionalParameters: false
+  #   parametersResolution: "Schema"   # or "Example"
+
+  # Keep values, enabled/disabled state and body edits made in Postman when an
+  # existing request is updated from the spec (default: true). Headers/params
+  # from the spec are matched by key, raw JSON bodies field by field.
+  # common_headers / common_query_params always win. Use --no-preserve for a
+  # one-off run that regenerates everything from the spec.
+  preserve_request_data: true
+
   # Doc links: append a documentation link to each request description.
   # Omit this section entirely to disable doc links.
   # doc_links:
   #   base_url: "https://your.docs.host/#tag/"
 
-  # Common headers injected into every request
+  # Common headers injected into every request. The value and disabled state
+  # are re-applied on every sync, overriding edits made in Postman.
   common_headers:
     - key: "X-Tenant"
       value: "{{tenantId}}"
@@ -38,6 +54,12 @@ openapi:
     - key: "X-App"
       value: "{{appSlug}}"
       disabled: false
+
+  # Common query parameters injected into every request
+  # common_query_params:
+  #   - key: "api_version"
+  #     value: "2024-01-01"
+  #     disabled: false
 
   # Collection-level authentication
   auth:

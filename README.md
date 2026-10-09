@@ -15,7 +15,7 @@ Inspired by [dmiska25/postman_sync.py](https://gist.github.com/dmiska25/e807fe46
 3. Imports the spec into Postman via the API (creates a temporary collection)
 4. Downloads the generated collection, then deletes the temporary one
 5. Transforms the collection: flattens single-request folders, sorts alphabetically, injects configured headers/auth/scripts, sets the base URL, and adds doc links
-6. Merges the transformed collection into an existing Postman collection of the same name, **preserving** auth, pre-request scripts, test scripts, and saved responses from previous manual edits
+6. Merges the transformed collection into an existing Postman collection of the same name, **preserving** auth, pre-request scripts, test scripts, saved responses, and (by default) header/param values and body edits from previous manual edits
 7. Endpoints removed from the spec are removed from the collection (spec is source of truth)
 
 ## Prerequisites
@@ -102,7 +102,10 @@ import:
 | `openapi.base_url` | `{{baseUrl}}` | Base URL for all requests (Postman variable recommended) |
 | `openapi.sanitize_enums` | `true` | Replace enum values with `<enum>` to reduce diff noise |
 | `openapi.doc_links.base_url` | — | Base URL for documentation links (omit to disable) |
-| `openapi.common_headers` | `[]` | Headers injected into every request |
+| `openapi.common_headers` | `[]` | Headers injected into every request (value and disabled state re-applied on every sync) |
+| `openapi.common_query_params` | `[]` | Query params injected into every request (value and disabled state re-applied on every sync) |
+| `openapi.import_options` | `{enableOptionalParameters: false}` | Options forwarded to Postman's OpenAPI importer; optional params/headers are generated disabled by default |
+| `openapi.preserve_request_data` | `true` | Keep header/param values, enabled state and body edits of existing requests (see merge behavior). `--no-preserve` disables it for one run |
 | `openapi.auth` | — | Collection-level authentication |
 | `openapi.auth.propagation` | — | Set to `"inherit"` to clear auth on all folders/requests so they inherit from the collection |
 | `openapi.scripts` | — | Collection-level pre-request and test scripts |
@@ -136,6 +139,7 @@ import:
 ./bin/postman-sync openapi-sync --openapi-path ./specs/            # directory (auto-detect root)
 ./bin/postman-sync openapi-sync --openapi-path ./specs/ --openapi-root-file main.yaml  # explicit root
 ./bin/postman-sync openapi-sync --config /path/to/config.yaml
+./bin/postman-sync openapi-sync --no-preserve                      # regenerate request data from the spec
 
 # Export collections and environments to disk
 ./bin/postman-sync export
@@ -179,7 +183,14 @@ When a collection with the same name already exists in the workspace:
 |---|---|
 | Which endpoints exist | New spec (removed endpoints are dropped) |
 | Endpoint order | Alphabetical (from transform step) |
-| Request URL, method, body, headers | New spec |
+| Request URL structure, method, description | New spec |
+| Header / query param / path variable / form field descriptions | New spec (carries `(Required)` and type info) |
+| Header, query param, form field values and enabled state | **Preserved** for keys still in the spec; new keys come from the spec ¹ |
+| Headers, query params, form fields added by hand | **Preserved** ² |
+| Path variable values | **Preserved** for variables still in the path |
+| Raw JSON body | **Merged** field by field: existing values kept, new spec fields added, removed fields dropped ³ |
+| Other body | **Preserved** unless the body mode changed in the spec |
+| `common_headers` / `common_query_params` | Config file (re-applied after the merge) |
 | Auth (item-level and folder-level) | **Preserved** from existing collection (unless `auth.propagation: inherit`) |
 | Pre-request and test scripts | **Preserved** from existing collection |
 | Saved example responses | **Preserved** from existing collection |
@@ -187,6 +198,12 @@ When a collection with the same name already exists in the workspace:
 | Collection-level scripts | Config file (if set), otherwise preserved from existing |
 
 On first sync (no existing collection), config-defined auth/scripts are applied as defaults.
+
+¹ Rows marked preserved/merged for request data apply when `preserve_request_data` is `true` (default). With `false` or `--no-preserve`, request data comes entirely from the spec.
+
+² An entry counts as "added by hand" when it has no description: Postman's importer always copies the spec description. Spec entries without a description in the spec are therefore kept even after being removed from the spec.
+
+³ If a raw body is not valid JSON (e.g. it contains unquoted `{{variables}}`), it is kept as is. When a field changes kind in the spec (e.g. string → object) the spec value wins. Array elements are kept; object elements gain/lose fields based on the spec's first element.
 
 ## Multi-file OpenAPI specs
 
@@ -308,9 +325,12 @@ postman-sync/
 │   │   └── loader.go       # Load OpenAPI spec (JSON/YAML) + enum sanitization
 │   └── postman/
 │       ├── types.go        # Postman Collection v2.1 + Environment types
+│       ├── types_json.go   # JSON (un)marshalling keeping unmodelled fields (extra.go)
 │       ├── client.go       # Postman API HTTP client (collections + environments)
 │       ├── transform.go    # Collection transformers
-│       └── merge.go        # Name-based recursive merge
+│       ├── merge.go        # Name-based recursive merge
+│       ├── merge_request.go  # Preserving merge of headers/params/body
+│       └── jsonmerge.go    # Order-preserving raw JSON body merge
 ├── postman-sync.example.yaml
 ├── Makefile
 ├── .goreleaser.yaml

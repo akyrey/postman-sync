@@ -15,6 +15,7 @@ import (
 func newOpenAPISyncCmd() *cobra.Command {
 	var openapiPath string
 	var openapiRootFile string
+	var noPreserve bool
 
 	cmd := &cobra.Command{
 		Use:   "openapi-sync",
@@ -41,6 +42,9 @@ and bundled into a single document before import.`,
 			if cmd.Flags().Changed("openapi-root-file") {
 				cfg.OpenAPI.RootFile = openapiRootFile
 			}
+			if noPreserve {
+				cfg.OpenAPI.PreserveRequestData = false
+			}
 			if err := cfg.ValidateOpenAPISync(); err != nil {
 				return err
 			}
@@ -56,6 +60,7 @@ and bundled into a single document before import.`,
 
 	cmd.Flags().StringVar(&openapiPath, "openapi-path", "", "Path to the OpenAPI spec file or directory (overrides config openapi.path)")
 	cmd.Flags().StringVar(&openapiRootFile, "openapi-root-file", "", "Root spec filename when --openapi-path is a directory (overrides config openapi.root_file)")
+	cmd.Flags().BoolVar(&noPreserve, "no-preserve", false, "Regenerate headers, params and bodies of existing requests from the spec, discarding edits made in Postman (overrides config openapi.preserve_request_data)")
 	return cmd
 }
 
@@ -76,7 +81,7 @@ func runOpenAPISync(cfg *config.Config) error {
 	client := postman.NewClient(cfg.PostmanAPIKey, cfg.WorkspaceID)
 
 	fmt.Println("Importing spec into Postman...")
-	tmpID, err := client.ImportOpenAPI(spec)
+	tmpID, err := client.ImportOpenAPI(spec, o.EffectiveImportOptions())
 	if err != nil {
 		return err
 	}
@@ -101,9 +106,7 @@ func runOpenAPISync(cfg *config.Config) error {
 	col.Items = postman.FlattenSingleFolders(col.Items)
 	col.Items = postman.SortItemsAlpha(col.Items)
 
-	if len(o.CommonHeaders) > 0 {
-		postman.ApplyCommonHeaders(col.Items, o.CommonHeaders)
-	}
+	applyCommonParams(col.Items, o)
 
 	if err := postman.ApplyAuth(col, o.Auth); err != nil {
 		return err
@@ -144,8 +147,12 @@ func runOpenAPISync(cfg *config.Config) error {
 			return err
 		}
 
-		// Merge items: new spec drives structure, old drives auth/scripts.
-		mergedItems := postman.MergeItems(oldWrapper.Collection.Items, col.Items)
+		// Merge items: new spec drives structure, old drives auth/scripts
+		// (and header/param/body values when preserving request data).
+		mergedItems := postman.MergeItemsWith(oldWrapper.Collection.Items, col.Items,
+			postman.MergeOptions{PreserveRequestData: o.PreserveRequestData})
+		// Configured headers/params always win over values kept from Postman.
+		applyCommonParams(mergedItems, o)
 		oldWrapper.Collection.Items = mergedItems
 
 		// Apply collection-level auth from config (if set), otherwise keep old.
@@ -174,6 +181,16 @@ func runOpenAPISync(cfg *config.Config) error {
 	}
 
 	return nil
+}
+
+// applyCommonParams injects the configured common headers and query params.
+func applyCommonParams(items []postman.CollectionItem, o *config.OpenAPIConfig) {
+	if len(o.CommonHeaders) > 0 {
+		postman.ApplyCommonHeaders(items, o.CommonHeaders)
+	}
+	if len(o.CommonQueryParams) > 0 {
+		postman.ApplyCommonQueryParams(items, o.CommonQueryParams)
+	}
 }
 
 // stripIDs removes Postman-generated id fields from all items.

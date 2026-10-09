@@ -187,6 +187,70 @@ func TestApplyCommonHeaders_SkipsItemsWithoutRequest(t *testing.T) {
 	postman.ApplyCommonHeaders(items, headers) // must not panic
 }
 
+// ── ApplyCommonQueryParams ────────────────────────────────────────────────────
+
+func TestApplyCommonQueryParams_InjectsNewParam(t *testing.T) {
+	items := []postman.CollectionItem{leafItem("Get", "GET")}
+	params := []config.QueryParam{{Key: "version", Value: "v1", Disabled: false}}
+	postman.ApplyCommonQueryParams(items, params)
+
+	got := items[0].Request.URL.Query
+	if len(got) != 1 || *got[0].Key != "version" || *got[0].Value != "v1" {
+		t.Errorf("query params = %+v", got)
+	}
+}
+
+func TestApplyCommonQueryParams_UpdatesExistingParam(t *testing.T) {
+	items := []postman.CollectionItem{leafItem("Get", "GET")}
+	oldKey, oldVal := "version", "v0"
+	items[0].Request.URL.Query = []postman.URLParam{{Key: &oldKey, Value: &oldVal}}
+	params := []config.QueryParam{{Key: "version", Value: "v1", Disabled: true}}
+	postman.ApplyCommonQueryParams(items, params)
+
+	got := items[0].Request.URL.Query
+	if len(got) != 1 || *got[0].Value != "v1" || !got[0].Disabled {
+		t.Errorf("query param not updated: %+v", got)
+	}
+}
+
+func TestApplyCommonQueryParams_CaseInsensitiveKeyMatch(t *testing.T) {
+	items := []postman.CollectionItem{leafItem("Get", "GET")}
+	k, v := "api_key", "old"
+	items[0].Request.URL.Query = []postman.URLParam{{Key: &k, Value: &v}}
+	params := []config.QueryParam{{Key: "API_KEY", Value: "new"}}
+	postman.ApplyCommonQueryParams(items, params)
+
+	got := items[0].Request.URL.Query
+	if len(got) != 1 || *got[0].Value != "new" {
+		t.Errorf("case-insensitive match failed: %+v", got)
+	}
+}
+
+func TestApplyCommonQueryParams_RecursesIntoFolders(t *testing.T) {
+	inner := leafItem("Inner", "POST")
+	items := []postman.CollectionItem{folderItem("Folder", inner)}
+	params := []config.QueryParam{{Key: "tenant", Value: "{{tenantId}}"}}
+	postman.ApplyCommonQueryParams(items, params)
+
+	children := *items[0].Items
+	got := children[0].Request.URL.Query
+	if len(got) != 1 || *got[0].Key != "tenant" {
+		t.Errorf("query param not injected into nested request: %+v", got)
+	}
+}
+
+func TestApplyCommonQueryParams_SkipsItemsWithoutRequest(t *testing.T) {
+	items := []postman.CollectionItem{{Name: "bare"}}
+	params := []config.QueryParam{{Key: "k", Value: "v"}}
+	postman.ApplyCommonQueryParams(items, params) // must not panic
+}
+
+func TestApplyCommonQueryParams_SkipsItemsWithNilURL(t *testing.T) {
+	items := []postman.CollectionItem{{Name: "no-url", Request: &postman.Request{}}}
+	params := []config.QueryParam{{Key: "k", Value: "v"}}
+	postman.ApplyCommonQueryParams(items, params) // must not panic
+}
+
 // ── ApplyAuth ─────────────────────────────────────────────────────────────────
 
 func TestApplyAuth_SetsCollectionAuth(t *testing.T) {

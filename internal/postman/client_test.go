@@ -34,7 +34,7 @@ func TestImportOpenAPI_Success(t *testing.T) {
 	defer srv.Close()
 
 	c := newTestClient(t, srv)
-	uid, err := c.ImportOpenAPI(map[string]any{"openapi": "3.0.0"})
+	uid, err := c.ImportOpenAPI(map[string]any{"openapi": "3.0.0"}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestImportOpenAPI_EmptyCollections(t *testing.T) {
 	defer srv.Close()
 
 	c := newTestClient(t, srv)
-	_, err := c.ImportOpenAPI(map[string]any{})
+	_, err := c.ImportOpenAPI(map[string]any{}, nil)
 	if err == nil {
 		t.Fatal("expected error for empty collections, got nil")
 	}
@@ -64,9 +64,33 @@ func TestImportOpenAPI_HTTPError(t *testing.T) {
 	defer srv.Close()
 
 	c := newTestClient(t, srv)
-	_, err := c.ImportOpenAPI(map[string]any{})
+	_, err := c.ImportOpenAPI(map[string]any{}, nil)
 	if err == nil {
 		t.Fatal("expected error for HTTP 401, got nil")
+	}
+}
+
+func TestImportOpenAPI_SendsOptions(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Options map[string]any `json:"options"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decoding payload: %v", err)
+		}
+		if payload.Options["enableOptionalParameters"] != false {
+			t.Errorf("options = %v, want enableOptionalParameters=false", payload.Options)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"collections": []map[string]any{{"uid": "abc-123"}},
+		})
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv)
+	if _, err := c.ImportOpenAPI(map[string]any{}, map[string]any{"enableOptionalParameters": false}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

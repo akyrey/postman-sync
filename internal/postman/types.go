@@ -16,6 +16,9 @@ type Collection struct {
 	Auth      *Auth            `json:"auth,omitempty"`
 	Events    []Event          `json:"event,omitempty"`
 	Variables []Variable       `json:"variable,omitempty"`
+
+	// Extra preserves fields not modelled above.
+	Extra Extra `json:"-"`
 }
 
 // Info holds metadata about the collection.
@@ -23,6 +26,9 @@ type Info struct {
 	PostmanID string `json:"_postman_id,omitempty"`
 	Name      string `json:"name"`
 	Schema    string `json:"schema"`
+
+	// Extra preserves fields not modelled above.
+	Extra Extra `json:"-"`
 }
 
 // CollectionItem is a union of Item (request leaf) and ItemGroup (folder).
@@ -40,6 +46,9 @@ type CollectionItem struct {
 
 	// Folder-only field: if non-nil, this item is a folder.
 	Items *[]CollectionItem `json:"item,omitempty"`
+
+	// Extra preserves fields not modelled above.
+	Extra Extra `json:"-"`
 }
 
 // IsFolder reports whether this CollectionItem is a folder (item-group).
@@ -55,6 +64,9 @@ type Request struct {
 	Body        *Body    `json:"body,omitempty"`
 	Auth        *Auth    `json:"auth,omitempty"`
 	Description string   `json:"description,omitempty"`
+
+	// Extra preserves fields not modelled above.
+	Extra Extra `json:"-"`
 }
 
 // URL holds the broken-down URL of a request.
@@ -66,6 +78,9 @@ type URL struct {
 	Port     string     `json:"port,omitempty"`
 	Query    []URLParam `json:"query,omitempty"`
 	Variable []Variable `json:"variable,omitempty"`
+
+	// Extra preserves fields not modelled above.
+	Extra Extra `json:"-"`
 }
 
 // URLParam is a query parameter.
@@ -73,6 +88,9 @@ type URLParam struct {
 	Key      *string `json:"key"`
 	Value    *string `json:"value"`
 	Disabled bool    `json:"disabled,omitempty"`
+
+	// Extra preserves fields not modelled above.
+	Extra Extra `json:"-"`
 }
 
 // Header is a single HTTP header.
@@ -80,13 +98,32 @@ type Header struct {
 	Key      string `json:"key"`
 	Value    string `json:"value"`
 	Disabled bool   `json:"disabled,omitempty"`
+
+	// Extra preserves fields not modelled above.
+	Extra Extra `json:"-"`
 }
 
 // Body holds request body data.
 type Body struct {
-	Mode     string `json:"mode,omitempty"`
-	Raw      string `json:"raw,omitempty"`
+	Mode       string      `json:"mode,omitempty"`
+	Raw        string      `json:"raw,omitempty"`
+	FormData   []FormParam `json:"formdata,omitempty"`
+	URLEncoded []FormParam `json:"urlencoded,omitempty"`
+	Disabled   bool        `json:"disabled,omitempty"`
+
+	// Extra preserves fields not modelled above.
+	Extra Extra `json:"-"`
+}
+
+// FormParam is a single form-data or urlencoded body field. Its value (which
+// Postman may send as null) and file src are kept in Extra.
+type FormParam struct {
+	Key      string `json:"key"`
+	Type     string `json:"type,omitempty"`
 	Disabled bool   `json:"disabled,omitempty"`
+
+	// Extra preserves fields not modelled above.
+	Extra Extra `json:"-"`
 }
 
 // Auth holds Postman authentication configuration.
@@ -102,6 +139,9 @@ type Auth struct {
 	Hawk     []AuthAttribute `json:"hawk,omitempty"`
 	AWSv4    []AuthAttribute `json:"awsv4,omitempty"`
 	EdgeGrid []AuthAttribute `json:"edgegrid,omitempty"`
+
+	// Extra preserves fields not modelled above.
+	Extra Extra `json:"-"`
 }
 
 // AuthAttribute is a key/value attribute for an auth method.
@@ -109,6 +149,9 @@ type AuthAttribute struct {
 	Key   string `json:"key"`
 	Value any    `json:"value,omitempty"`
 	Type  string `json:"type,omitempty"`
+
+	// Extra preserves fields not modelled above.
+	Extra Extra `json:"-"`
 }
 
 // Event is a Postman script event (prerequest or test).
@@ -116,6 +159,9 @@ type Event struct {
 	Listen   string `json:"listen"`
 	Script   Script `json:"script"`
 	Disabled bool   `json:"disabled,omitempty"`
+
+	// Extra preserves fields not modelled above.
+	Extra Extra `json:"-"`
 }
 
 // Script holds a JavaScript snippet.
@@ -123,6 +169,9 @@ type Script struct {
 	Type string   `json:"type,omitempty"`
 	Exec []string `json:"exec"`
 	Name string   `json:"name,omitempty"`
+
+	// Extra preserves fields not modelled above.
+	Extra Extra `json:"-"`
 }
 
 // Variable is a Postman variable.
@@ -131,6 +180,9 @@ type Variable struct {
 	Value string `json:"value,omitempty"`
 	Type  string `json:"type,omitempty"`
 	Name  string `json:"name,omitempty"`
+
+	// Extra preserves fields not modelled above.
+	Extra Extra `json:"-"`
 }
 
 // EnvironmentWrapper is the root envelope for Postman environment API responses.
@@ -143,6 +195,9 @@ type Environment struct {
 	ID     string             `json:"id,omitempty"`
 	Name   string             `json:"name"`
 	Values []EnvironmentValue `json:"values"`
+
+	// Extra preserves fields not modelled above.
+	Extra Extra `json:"-"`
 }
 
 // EnvironmentValue is a single variable in a Postman environment.
@@ -151,6 +206,9 @@ type EnvironmentValue struct {
 	Value   string `json:"value"`
 	Type    string `json:"type,omitempty"`
 	Enabled bool   `json:"enabled"`
+
+	// Extra preserves fields not modelled above.
+	Extra Extra `json:"-"`
 }
 
 // BuildAuth constructs a postman.Auth from the given type and attributes.

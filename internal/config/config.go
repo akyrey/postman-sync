@@ -14,6 +14,13 @@ type Header struct {
 	Disabled bool   `yaml:"disabled"`
 }
 
+// QueryParam represents a single query parameter to inject into requests.
+type QueryParam struct {
+	Key      string `yaml:"key"`
+	Value    string `yaml:"value"`
+	Disabled bool   `yaml:"disabled"`
+}
+
 // AuthAttribute is a key/value pair for a Postman auth method.
 type AuthAttribute struct {
 	Key   string `yaml:"key"`
@@ -53,15 +60,43 @@ type DocLinks struct {
 
 // OpenAPIConfig holds all configuration for the openapi-sync command.
 type OpenAPIConfig struct {
-	Path            string                    `yaml:"path"`
-	RootFile        string                    `yaml:"root_file,omitempty"`
-	BaseURL         string                    `yaml:"base_url"`
-	SanitizeEnums   bool                      `yaml:"sanitize_enums"`
-	DocLinks        *DocLinks                 `yaml:"doc_links,omitempty"`
-	CommonHeaders   []Header                  `yaml:"common_headers,omitempty"`
-	Auth            *Auth                     `yaml:"auth,omitempty"`
-	Scripts         *Scripts                  `yaml:"scripts,omitempty"`
-	FolderOverrides map[string]FolderOverride `yaml:"folder_overrides,omitempty"`
+	Path              string                    `yaml:"path"`
+	RootFile          string                    `yaml:"root_file,omitempty"`
+	BaseURL           string                    `yaml:"base_url"`
+	SanitizeEnums     bool                      `yaml:"sanitize_enums"`
+	DocLinks          *DocLinks                 `yaml:"doc_links,omitempty"`
+	CommonHeaders     []Header                  `yaml:"common_headers,omitempty"`
+	CommonQueryParams []QueryParam              `yaml:"common_query_params,omitempty"`
+	Auth              *Auth                     `yaml:"auth,omitempty"`
+	Scripts           *Scripts                  `yaml:"scripts,omitempty"`
+	FolderOverrides   map[string]FolderOverride `yaml:"folder_overrides,omitempty"`
+
+	// ImportOptions are passed to Postman's OpenAPI importer and overlay
+	// DefaultImportOptions.
+	ImportOptions map[string]any `yaml:"import_options,omitempty"`
+
+	// PreserveRequestData keeps header, parameter and body edits made in
+	// Postman when an existing request is updated from the spec.
+	PreserveRequestData bool `yaml:"preserve_request_data"`
+}
+
+// DefaultImportOptions are the Postman OpenAPI importer options used unless
+// overridden in openapi.import_options. Disabling optional parameters makes the
+// generated requests reflect which parameters the spec marks as required.
+func DefaultImportOptions() map[string]any {
+	return map[string]any{
+		"enableOptionalParameters": false,
+	}
+}
+
+// EffectiveImportOptions returns DefaultImportOptions overlaid with the
+// user-configured ImportOptions.
+func (o *OpenAPIConfig) EffectiveImportOptions() map[string]any {
+	opts := DefaultImportOptions()
+	for k, v := range o.ImportOptions {
+		opts[k] = v
+	}
+	return opts
 }
 
 // ExportConfig holds configuration for the export command.
@@ -97,9 +132,10 @@ type Config struct {
 
 func defaultOpenAPIConfig() *OpenAPIConfig {
 	return &OpenAPIConfig{
-		Path:          "./openapi.json",
-		BaseURL:       "{{baseUrl}}",
-		SanitizeEnums: true,
+		Path:                "./openapi.json",
+		BaseURL:             "{{baseUrl}}",
+		SanitizeEnums:       true,
+		PreserveRequestData: true,
 	}
 }
 
