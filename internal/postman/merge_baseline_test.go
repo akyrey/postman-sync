@@ -1,6 +1,7 @@
 package postman_test
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/akyrey/postman-sync/internal/postman"
@@ -195,5 +196,27 @@ func TestMergeBaseline_UsesBaselineInsideFolders(t *testing.T) {
 	got := postman.MergeItemsWith(old, new, postman.MergeOptions{PreserveRequestData: true, Baseline: base})
 	if v := (*got[0].Items)[0].Request.Header[0].Value; v != "<integer>" {
 		t.Errorf("nested untouched header should follow spec, got %q", v)
+	}
+}
+
+func TestMergeBaseline_FormFieldComparisonIgnoresJSONEscaping(t *testing.T) {
+	// Baselines are written by encoding/json, which may escape "<" as \u003c,
+	// while Postman returns the literal character.
+	field := func(value string) postman.FormParam {
+		return postman.FormParam{Key: "a", Type: "text", Extra: postman.Extra{
+			"value":       json.RawMessage(value),
+			"description": json.RawMessage(`"a"`),
+		}}
+	}
+	request := func(f postman.FormParam) *postman.Request {
+		return &postman.Request{Body: &postman.Body{Mode: "formdata", FormData: []postman.FormParam{f}}}
+	}
+	old := []postman.CollectionItem{{Name: "R", Request: request(field(`"<string>"`))}}
+	base := []postman.CollectionItem{{Name: "R", Request: request(field(`"\u003cstring\u003e"`))}}
+	new := []postman.CollectionItem{{Name: "R", Request: request(field(`"<long>"`))}}
+
+	got := postman.MergeItemsWith(old, new, postman.MergeOptions{PreserveRequestData: true, Baseline: base})
+	if v := string(got[0].Request.Body.FormData[0].Extra["value"]); v != `"<long>"` {
+		t.Errorf("untouched form value should follow spec, got %s", v)
 	}
 }

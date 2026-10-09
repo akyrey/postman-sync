@@ -248,7 +248,7 @@ var formParamMerge = keyedMerge[FormParam]{
 		}
 		for _, k := range formUserFields {
 			ov, inOld := old.Extra[k]
-			untouched := base != nil && bytes.Equal(ov, base.Extra[k])
+			untouched := base != nil && sameRawJSON(ov, base.Extra[k])
 			if inOld && !untouched {
 				extra[k] = ov
 			}

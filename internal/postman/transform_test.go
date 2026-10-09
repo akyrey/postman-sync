@@ -735,3 +735,59 @@ func TestPropagateAuthInherit_NilOverridesMap(t *testing.T) {
 		t.Errorf("expected auth cleared, got %+v", items[0].Auth)
 	}
 }
+
+// ── SyncRawQuery ──────────────────────────────────────────────────────────────
+
+func TestSyncRawQuery_AppendsEnabledParamsOnly(t *testing.T) {
+	a, b, c := "a", "b", "c"
+	one, two, empty := "1", "2", ""
+	items := []postman.CollectionItem{folderItem("F", postman.CollectionItem{
+		Name: "R",
+		Request: &postman.Request{URL: &postman.URL{
+			Raw: "{{baseUrl}}/x?stale=1",
+			Query: []postman.URLParam{
+				{Key: &a, Value: &one},
+				{Key: &b, Value: &two, Disabled: true},
+				{Key: &c, Value: &empty},
+			},
+		}},
+	})}
+
+	postman.SyncRawQuery(items)
+
+	got := (*items[0].Items)[0].Request.URL.Raw
+	if got != "{{baseUrl}}/x?a=1&c=" {
+		t.Errorf("raw = %q", got)
+	}
+}
+
+func TestSyncRawQuery_NoEnabledParamsStripsQuery(t *testing.T) {
+	a, one := "a", "1"
+	items := []postman.CollectionItem{{
+		Name: "R",
+		Request: &postman.Request{URL: &postman.URL{
+			Raw:   "{{baseUrl}}/x?a=1",
+			Query: []postman.URLParam{{Key: &a, Value: &one, Disabled: true}},
+		}},
+	}}
+
+	postman.SyncRawQuery(items)
+
+	if got := items[0].Request.URL.Raw; got != "{{baseUrl}}/x" {
+		t.Errorf("raw = %q", got)
+	}
+}
+
+func TestSyncRawQuery_KeyWithoutValue(t *testing.T) {
+	a := "flag"
+	items := []postman.CollectionItem{{
+		Name:    "R",
+		Request: &postman.Request{URL: &postman.URL{Raw: "/x", Query: []postman.URLParam{{Key: &a}}}},
+	}}
+
+	postman.SyncRawQuery(items)
+
+	if got := items[0].Request.URL.Raw; got != "/x?flag" {
+		t.Errorf("raw = %q", got)
+	}
+}

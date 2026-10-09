@@ -141,6 +141,7 @@ import:
 ./bin/postman-sync openapi-sync --openapi-path ./specs/ --openapi-root-file main.yaml  # explicit root
 ./bin/postman-sync openapi-sync --config /path/to/config.yaml
 ./bin/postman-sync openapi-sync --no-preserve                      # regenerate request data from the spec
+./bin/postman-sync openapi-sync --dry-run                          # show what would change, write nothing
 
 # Export collections and environments to disk
 ./bin/postman-sync export
@@ -216,6 +217,24 @@ Requests without a baseline (first sync, new machine, deleted state dir) fall ba
 ² With a baseline. Without one, hand-added entries are detected by their missing description and hand-deleted entries are re-added.
 
 ³ An untouched body is replaced by the spec's body. If an edited raw body is not valid JSON (e.g. it contains unquoted `{{variables}}`), it is kept as is. When a field changes kind in the spec (e.g. string → object) the spec value wins. Array elements are kept; object elements gain/lose fields based on the spec's first element. Without a baseline, fields no longer in the spec are always dropped.
+
+### Dry run
+
+`--dry-run` runs the whole pipeline but writes nothing: no collection update/creation and no baseline. Postman still converts the spec through a temporary collection, which is deleted as usual. The output lists every change the sync would make:
+
+```
+~ (collection)
+    auth: bearer → oauth2
++ Orders/Create order
+~ Orders/List orders
+    url: "{{baseUrl}}/orders?page=1" → "{{baseUrl}}/orders"
+    query page: disabled false → true
+    header x-skp-locale: description changed
+- Orders/Legacy export
+Summary: 1 added, 1 removed, 2 modified.
+```
+
+`+` added, `-` removed, `~` modified. Added or removed folders are reported once, with their request count. Combine with `--no-preserve` to preview a full reset.
 
 ## Multi-file OpenAPI specs
 
@@ -342,7 +361,8 @@ postman-sync/
 │       ├── transform.go    # Collection transformers
 │       ├── merge.go        # Name-based recursive merge
 │       ├── merge_request.go  # Preserving (two/three-way) merge of headers/params/body
-│       └── jsonmerge.go    # Order-preserving raw JSON body merge
+│       ├── jsonmerge.go    # Order-preserving raw JSON body merge
+│       └── diff.go         # Collection diff used by --dry-run
 ├── postman-sync.example.yaml
 ├── Makefile
 ├── .goreleaser.yaml

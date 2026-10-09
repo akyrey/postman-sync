@@ -16,6 +16,7 @@ func newOpenAPISyncCmd() *cobra.Command {
 	var openapiPath string
 	var openapiRootFile string
 	var noPreserve bool
+	var dryRun bool
 
 	cmd := &cobra.Command{
 		Use:   "openapi-sync",
@@ -50,7 +51,7 @@ and bundled into a single document before import.`,
 			}
 
 			start := time.Now()
-			if err := runOpenAPISync(cfg); err != nil {
+			if err := runOpenAPISync(cfg, dryRun); err != nil {
 				return err
 			}
 			fmt.Printf("Completed in %.1fs\n", time.Since(start).Seconds())
@@ -61,48 +62,93 @@ and bundled into a single document before import.`,
 	cmd.Flags().StringVar(&openapiPath, "openapi-path", "", "Path to the OpenAPI spec file or directory (overrides config openapi.path)")
 	cmd.Flags().StringVar(&openapiRootFile, "openapi-root-file", "", "Root spec filename when --openapi-path is a directory (overrides config openapi.root_file)")
 	cmd.Flags().BoolVar(&noPreserve, "no-preserve", false, "Regenerate headers, params and bodies of existing requests from the spec, discarding edits made in Postman (overrides config openapi.preserve_request_data)")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show what would change in the Postman collection without updating it (the spec is still converted through a temporary collection, which is deleted)")
 	return cmd
 }
 
-func runOpenAPISync(cfg *config.Config) error {
+func runOpenAPISync(cfg *config.Config, dryRun bool) error {
 	o := cfg.OpenAPI
+	client := postman.NewClient(cfg.PostmanAPIKey, cfg.WorkspaceID)
 
+	generated, err := generateCollection(client, o)
+	if err != nil {
+		return err
+	}
+	col := &generated.Collection
+
+	// Snapshot what the spec generated before merging: it becomes the next
+	// sync's baseline once Postman has been updated.
+	snapshot, err := snapshotBaseline(col)
+	if err != nil {
+		return err
+	}
+
+	colName := col.Info.Name
+	fmt.Printf("Looking up existing collections in workspace...\n")
+	existing, err := client.GetWorkspaceCollections()
+	if err != nil {
+		return err
+	}
+
+	if existingID, found := existing[colName]; found {
+		err = updateCollection(client, o, existingID, col, dryRun)
+	} else {
+		err = createCollection(client, generated, dryRun)
+	}
+	if err != nil || dryRun {
+		return err
+	}
+
+	if err := saveBaseline(o.StateDir, colName, snapshot); err != nil {
+		// Non-fatal: the next sync falls back to a two-way merge.
+		fmt.Fprintf(os.Stderr, "warning: %v\n", err)
+	}
+	return nil
+}
+
+// generateCollection converts the OpenAPI spec into a Postman collection
+// (through a temporary collection, deleted afterwards) and applies the
+// configured transforms.
+func generateCollection(client *postman.Client, o *config.OpenAPIConfig) (*postman.CollectionWrapper, error) {
 	// ── 1. Load & optionally sanitise the OpenAPI spec ─────────────────────
 	fmt.Printf("Loading OpenAPI spec from %q...\n", o.Path)
 	spec, err := openapi.LoadAndBundle(o.Path, o.RootFile)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if o.SanitizeEnums {
 		openapi.SanitizeEnums(spec)
 	}
 
 	// ── 2. Import spec into Postman (creates a temporary collection) ───────
-	client := postman.NewClient(cfg.PostmanAPIKey, cfg.WorkspaceID)
-
 	fmt.Println("Importing spec into Postman...")
 	tmpID, err := client.ImportOpenAPI(spec, o.EffectiveImportOptions())
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// ── 3. Download the generated collection ──────────────────────────────
 	fmt.Printf("Fetching generated collection %q...\n", tmpID)
 	generated, err := client.GetCollection(tmpID)
-	if err != nil {
-		return err
-	}
 
 	// ── 4. Delete the temporary collection ────────────────────────────────
 	fmt.Printf("Deleting temporary collection %q...\n", tmpID)
-	if err := client.DeleteCollection(tmpID); err != nil {
+	if delErr := client.DeleteCollection(tmpID); delErr != nil {
 		// Non-fatal: warn but continue.
-		fmt.Fprintf(os.Stderr, "warning: could not delete temporary collection %q: %v\n", tmpID, err)
+		fmt.Fprintf(os.Stderr, "warning: could not delete temporary collection %q: %v\n", tmpID, delErr)
+	}
+	if err != nil {
+		return nil, err
 	}
 
 	// ── 5. Transform the generated collection ─────────────────────────────
-	col := &generated.Collection
+	if err := transformCollection(&generated.Collection, o); err != nil {
+		return nil, err
+	}
+	return generated, nil
+}
 
+func transformCollection(col *postman.Collection, o *config.OpenAPIConfig) error {
 	col.Items = postman.FlattenSingleFolders(col.Items)
 	col.Items = postman.SortItemsAlpha(col.Items)
 
@@ -132,73 +178,86 @@ func runOpenAPISync(cfg *config.Config) error {
 		postman.AddDocLinks(col.Items, o.DocLinks.BaseURL)
 	}
 
-	// ── 6. Merge into existing collection (or create new) ─────────────────
-	colName := col.Info.Name
-	fmt.Printf("Looking up existing collections in workspace...\n")
-	existing, err := client.GetWorkspaceCollections()
+	postman.SyncRawQuery(col.Items)
+	return nil
+}
+
+// updateCollection merges the generated collection into the existing one and
+// uploads the result, or only prints the changes when dryRun is set.
+func updateCollection(client *postman.Client, o *config.OpenAPIConfig, id string, col *postman.Collection, dryRun bool) error {
+	fmt.Printf("Merging into existing collection %q (%s)...\n", col.Info.Name, id)
+	current, err := client.GetCollection(id)
 	if err != nil {
 		return err
 	}
 
-	// Snapshot what the spec generated before merging: it becomes the next
-	// sync's baseline once Postman has been updated.
-	snapshot, err := snapshotBaseline(col)
+	baseline, err := loadBaseline(o.StateDir, col.Info.Name)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: %v; merging without baseline\n", err)
+	}
+	if baseline == nil && o.PreserveRequestData {
+		fmt.Println("No baseline from a previous sync: using two-way merge.")
+	}
+
+	updated := mergeCollection(&current.Collection, col, o, baseline)
+	if dryRun {
+		fmt.Printf("Dry run: changes that would be applied to %q (nothing was written):\n", col.Info.Name)
+		printChanges(os.Stdout, postman.DiffCollections(&current.Collection, &updated.Collection))
+		return nil
+	}
+
+	if err := client.UpdateCollection(id, updated); err != nil {
 		return err
 	}
+	fmt.Printf("Updated collection %q.\n", col.Info.Name)
+	return nil
+}
 
-	if existingID, found := existing[colName]; found {
-		fmt.Printf("Merging into existing collection %q (%s)...\n", colName, existingID)
-		oldWrapper, err := client.GetCollection(existingID)
-		if err != nil {
-			return err
-		}
+// mergeCollection returns the collection to upload: current with the
+// generated items merged in and config-driven collection settings applied.
+// current is not modified.
+func mergeCollection(current, generated *postman.Collection, o *config.OpenAPIConfig, baseline []postman.CollectionItem) *postman.CollectionWrapper {
+	out := *current
 
-		baseline, err := loadBaseline(o.StateDir, colName)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "warning: %v; merging without baseline\n", err)
-		}
-		if baseline == nil && o.PreserveRequestData {
-			fmt.Println("No baseline from a previous sync: using two-way merge.")
-		}
+	// Merge items: new spec drives structure, old drives auth/scripts
+	// (and header/param/body values when preserving request data).
+	out.Items = postman.MergeItemsWith(current.Items, generated.Items,
+		postman.MergeOptions{PreserveRequestData: o.PreserveRequestData, Baseline: baseline})
+	// Configured headers/params always win over values kept from Postman.
+	applyCommonParams(out.Items, o)
+	// Merging may have changed which query params are enabled.
+	postman.SyncRawQuery(out.Items)
 
-		// Merge items: new spec drives structure, old drives auth/scripts
-		// (and header/param/body values when preserving request data).
-		mergedItems := postman.MergeItemsWith(oldWrapper.Collection.Items, col.Items,
-			postman.MergeOptions{PreserveRequestData: o.PreserveRequestData, Baseline: baseline})
-		// Configured headers/params always win over values kept from Postman.
-		applyCommonParams(mergedItems, o)
-		oldWrapper.Collection.Items = mergedItems
-
-		// Apply collection-level auth from config (if set), otherwise keep old.
-		if col.Auth != nil {
-			oldWrapper.Collection.Auth = col.Auth
-		}
-
-		// Apply collection-level events from config (if set), otherwise keep old.
-		if len(col.Events) > 0 {
-			oldWrapper.Collection.Events = col.Events
-		}
-
-		if err := client.UpdateCollection(existingID, oldWrapper); err != nil {
-			return err
-		}
-		fmt.Printf("Updated collection %q.\n", colName)
-	} else {
-		fmt.Printf("Creating new collection %q...\n", colName)
-		// Strip Postman-generated IDs for portability.
-		stripIDs(col.Items)
-
-		if err := client.CreateCollection(generated); err != nil {
-			return err
-		}
-		fmt.Printf("Created collection %q.\n", colName)
+	// Apply collection-level auth from config (if set), otherwise keep old.
+	if generated.Auth != nil {
+		out.Auth = generated.Auth
 	}
 
-	if err := saveBaseline(o.StateDir, colName, snapshot); err != nil {
-		// Non-fatal: the next sync falls back to a two-way merge.
-		fmt.Fprintf(os.Stderr, "warning: %v\n", err)
+	// Apply collection-level events from config (if set), otherwise keep old.
+	if len(generated.Events) > 0 {
+		out.Events = generated.Events
 	}
+	return &postman.CollectionWrapper{Collection: out}
+}
+
+// createCollection uploads the generated collection as a new collection, or
+// only reports it when dryRun is set.
+func createCollection(client *postman.Client, generated *postman.CollectionWrapper, dryRun bool) error {
+	name := generated.Collection.Info.Name
+	if dryRun {
+		fmt.Printf("Dry run: would create collection %q with %d request(s) (nothing was written).\n",
+			name, postman.CountRequests(generated.Collection.Items))
+		return nil
+	}
+
+	fmt.Printf("Creating new collection %q...\n", name)
+	// Strip Postman-generated IDs for portability.
+	stripIDs(generated.Collection.Items)
+
+	if err := client.CreateCollection(generated); err != nil {
+		return err
+	}
+	fmt.Printf("Created collection %q.\n", name)
 	return nil
 }
 

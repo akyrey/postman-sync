@@ -250,6 +250,38 @@ func splitBaseURL(base string) (proto, host string) {
 	return "https", base
 }
 
+// SyncRawQuery rewrites the query string of every request's raw URL from its
+// enabled query params, the way Postman builds it. Run it after anything that
+// changes query params or their enabled state, so raw does not go stale.
+func SyncRawQuery(items []CollectionItem) {
+	for i := range items {
+		if items[i].IsFolder() {
+			SyncRawQuery(*items[i].Items)
+			continue
+		}
+		if items[i].Request == nil || items[i].Request.URL == nil {
+			continue
+		}
+		u := items[i].Request.URL
+		base, _, _ := strings.Cut(u.Raw, "?")
+		var pairs []string
+		for _, q := range u.Query {
+			if q.Disabled {
+				continue
+			}
+			pair := derefString(q.Key)
+			if q.Value != nil {
+				pair += "=" + *q.Value
+			}
+			pairs = append(pairs, pair)
+		}
+		u.Raw = base
+		if len(pairs) > 0 {
+			u.Raw += "?" + strings.Join(pairs, "&")
+		}
+	}
+}
+
 // AddDocLinks appends a Markdown doc link to each leaf request's description.
 func AddDocLinks(items []CollectionItem, baseDocURL string) {
 	for i := range items {
