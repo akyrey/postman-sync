@@ -8,6 +8,9 @@ postman-sync.yaml
 *.openapi.json
 *.openapi.yaml
 
+# Local sync state (baselines, backups)
+.postman-sync/
+
 # Go
 *.exe
 *.exe~

@@ -40,6 +40,11 @@ openapi:
   # one-off run that regenerates everything from the spec.
   preserve_request_data: true
 
+  # Local sync state. After each sync, the generated collection is saved in
+  # <state_dir>/baselines/ and used by the next sync for a three-way merge:
+  # values untouched since the last sync follow the spec, edited ones are kept.
+  state_dir: ".postman-sync"
+
   # Doc links: append a documentation link to each request description.
   # Omit this section entirely to disable doc links.
   # doc_links:

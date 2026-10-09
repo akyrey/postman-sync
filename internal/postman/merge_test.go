@@ -260,3 +260,15 @@ func TestMergeItems_OrderFollowsNew(t *testing.T) {
 		t.Errorf("order should follow new: got %q, %q", result[0].Name, result[1].Name)
 	}
 }
+
+func TestMergeItems_FolderKeepsOldID(t *testing.T) {
+	oldFolder := folderItem("F", leafItem("R", "GET"))
+	oldFolder.ID = "existing-id"
+	newFolder := folderItem("F", leafItem("R", "GET"))
+	newFolder.ID = "temporary-id"
+
+	result := postman.MergeItems([]postman.CollectionItem{oldFolder}, []postman.CollectionItem{newFolder})
+	if result[0].ID != "existing-id" {
+		t.Errorf("folder ID = %q, want %q", result[0].ID, "existing-id")
+	}
+}

@@ -105,6 +105,7 @@ import:
 | `openapi.common_headers` | `[]` | Headers injected into every request (value and disabled state re-applied on every sync) |
 | `openapi.common_query_params` | `[]` | Query params injected into every request (value and disabled state re-applied on every sync) |
 | `openapi.import_options` | `{enableOptionalParameters: false}` | Options forwarded to Postman's OpenAPI importer; optional params/headers are generated disabled by default |
+| `openapi.state_dir` | `.postman-sync` | Local sync state: per-collection baselines used for three-way merges |
 | `openapi.preserve_request_data` | `true` | Keep header/param values, enabled state and body edits of existing requests (see merge behavior). `--no-preserve` disables it for one run |
 | `openapi.auth` | — | Collection-level authentication |
 | `openapi.auth.propagation` | — | Set to `"inherit"` to clear auth on all folders/requests so they inherit from the collection |
@@ -185,11 +186,12 @@ When a collection with the same name already exists in the workspace:
 | Endpoint order | Alphabetical (from transform step) |
 | Request URL structure, method, description | New spec |
 | Header / query param / path variable / form field descriptions | New spec (carries `(Required)` and type info) |
-| Header, query param, form field values and enabled state | **Preserved** for keys still in the spec; new keys come from the spec ¹ |
+| Header, query param, form field values and enabled state | Edited in Postman: **preserved**. Untouched: follow the spec ¹ |
 | Headers, query params, form fields added by hand | **Preserved** ² |
-| Path variable values | **Preserved** for variables still in the path |
-| Raw JSON body | **Merged** field by field: existing values kept, new spec fields added, removed fields dropped ³ |
-| Other body | **Preserved** unless the body mode changed in the spec |
+| Headers, query params, form fields deleted by hand | Stay deleted ² |
+| Path variable values | Edited: **preserved**. Untouched: follow the spec |
+| Raw JSON body | **Merged** field by field with the same rules ³ |
+| Other body | Edited: **preserved** (unless the body mode changed in the spec). Untouched: follow the spec |
 | `common_headers` / `common_query_params` | Config file (re-applied after the merge) |
 | Auth (item-level and folder-level) | **Preserved** from existing collection (unless `auth.propagation: inherit`) |
 | Pre-request and test scripts | **Preserved** from existing collection |
@@ -199,11 +201,21 @@ When a collection with the same name already exists in the workspace:
 
 On first sync (no existing collection), config-defined auth/scripts are applied as defaults.
 
-¹ Rows marked preserved/merged for request data apply when `preserve_request_data` is `true` (default). With `false` or `--no-preserve`, request data comes entirely from the spec.
+¹ Rows about request data apply when `preserve_request_data` is `true` (default). With `false` or `--no-preserve`, request data comes entirely from the spec.
 
-² An entry counts as "added by hand" when it has no description: Postman's importer always copies the spec description. Spec entries without a description in the spec are therefore kept even after being removed from the spec.
+### Baselines (three-way merge)
 
-³ If a raw body is not valid JSON (e.g. it contains unquoted `{{variables}}`), it is kept as is. When a field changes kind in the spec (e.g. string → object) the spec value wins. Array elements are kept; object elements gain/lose fields based on the spec's first element.
+After every successful sync, the collection generated from the spec is saved as a *baseline* in `<state_dir>/baselines/<collection>.json` (`state_dir` defaults to `.postman-sync`, relative to the working directory). The next sync compares three versions of each request: the baseline, the current Postman collection, and the newly generated one:
+
+- a value or enabled state still equal to the baseline was never touched, so it follows the spec (e.g. a placeholder that changed from `<string>` to `<long>`);
+- a value that differs from the baseline was edited in Postman and is kept;
+- an entry in Postman but not in the baseline was added by hand and is kept; an entry in the baseline but no longer in Postman was deleted by hand and stays deleted.
+
+Requests without a baseline (first sync, new machine, deleted state dir) fall back to a two-way merge: matched entries keep their Postman value and state, and an entry counts as hand-added when it has no description (Postman's importer always copies the spec description). Keep `state_dir` out of version control (add it to `.gitignore`) unless the whole team syncs from the same checkout.
+
+² With a baseline. Without one, hand-added entries are detected by their missing description and hand-deleted entries are re-added.
+
+³ An untouched body is replaced by the spec's body. If an edited raw body is not valid JSON (e.g. it contains unquoted `{{variables}}`), it is kept as is. When a field changes kind in the spec (e.g. string → object) the spec value wins. Array elements are kept; object elements gain/lose fields based on the spec's first element. Without a baseline, fields no longer in the spec are always dropped.
 
 ## Multi-file OpenAPI specs
 
@@ -329,7 +341,7 @@ postman-sync/
 │       ├── client.go       # Postman API HTTP client (collections + environments)
 │       ├── transform.go    # Collection transformers
 │       ├── merge.go        # Name-based recursive merge
-│       ├── merge_request.go  # Preserving merge of headers/params/body
+│       ├── merge_request.go  # Preserving (two/three-way) merge of headers/params/body
 │       └── jsonmerge.go    # Order-preserving raw JSON body merge
 ├── postman-sync.example.yaml
 ├── Makefile

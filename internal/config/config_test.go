@@ -466,3 +466,33 @@ openapi:
 		t.Errorf("import options = %v", got)
 	}
 }
+
+func TestLoad_StateDirDefault(t *testing.T) {
+	path := writeTemp(t, `
+postman_api_key: "key"
+workspace_id: "ws"
+`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.OpenAPI.StateDir != ".postman-sync" {
+		t.Errorf("OpenAPI.StateDir = %q, want %q", cfg.OpenAPI.StateDir, ".postman-sync")
+	}
+}
+
+func TestValidateOpenAPISync_EmptyStateDir(t *testing.T) {
+	path := writeTemp(t, `
+postman_api_key: "key"
+workspace_id: "ws"
+openapi:
+  state_dir: ""
+`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected load error: %v", err)
+	}
+	if err := cfg.ValidateOpenAPISync(); err == nil {
+		t.Fatal("expected error for empty state_dir, got nil")
+	}
+}

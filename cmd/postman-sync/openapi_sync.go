@@ -140,6 +140,13 @@ func runOpenAPISync(cfg *config.Config) error {
 		return err
 	}
 
+	// Snapshot what the spec generated before merging: it becomes the next
+	// sync's baseline once Postman has been updated.
+	snapshot, err := snapshotBaseline(col)
+	if err != nil {
+		return err
+	}
+
 	if existingID, found := existing[colName]; found {
 		fmt.Printf("Merging into existing collection %q (%s)...\n", colName, existingID)
 		oldWrapper, err := client.GetCollection(existingID)
@@ -147,10 +154,18 @@ func runOpenAPISync(cfg *config.Config) error {
 			return err
 		}
 
+		baseline, err := loadBaseline(o.StateDir, colName)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: %v; merging without baseline\n", err)
+		}
+		if baseline == nil && o.PreserveRequestData {
+			fmt.Println("No baseline from a previous sync: using two-way merge.")
+		}
+
 		// Merge items: new spec drives structure, old drives auth/scripts
 		// (and header/param/body values when preserving request data).
 		mergedItems := postman.MergeItemsWith(oldWrapper.Collection.Items, col.Items,
-			postman.MergeOptions{PreserveRequestData: o.PreserveRequestData})
+			postman.MergeOptions{PreserveRequestData: o.PreserveRequestData, Baseline: baseline})
 		// Configured headers/params always win over values kept from Postman.
 		applyCommonParams(mergedItems, o)
 		oldWrapper.Collection.Items = mergedItems
@@ -180,6 +195,10 @@ func runOpenAPISync(cfg *config.Config) error {
 		fmt.Printf("Created collection %q.\n", colName)
 	}
 
+	if err := saveBaseline(o.StateDir, colName, snapshot); err != nil {
+		// Non-fatal: the next sync falls back to a two-way merge.
+		fmt.Fprintf(os.Stderr, "warning: %v\n", err)
+	}
 	return nil
 }
 
