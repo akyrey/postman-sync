@@ -175,6 +175,14 @@ import:                # config for import command
 
 Releases are automated via GoReleaser (`.goreleaser.yaml`) and triggered by pushing a `v*` tag. The `release.yml` GitHub Actions workflow runs tests first, then GoReleaser.
 
+Release notes come from `CHANGELOG.md`: add a `## [vX.Y.Z] - date` section
+(Keep a Changelog groups: Added, Changed, Fixed...) and its compare link before
+tagging. The release workflow extracts it with `scripts/release-notes.sh <tag>`
+and passes it to goreleaser via `--release-notes`; a tag without a section
+fails the release.
+
+Full release: add the CHANGELOG section, tag (`git tag -a v1.2.3`) and push the tag; CI runs goreleaser. Locally: `goreleaser release --clean --release-notes=<(scripts/release-notes.sh v1.2.3)`
+
 Secrets required in the GitHub repository:
 - `CODECOV_TOKEN`: for coverage uploads in CI
 - `HOMEBREW_TAP_GITHUB_TOKEN`: personal access token with `repo` scope, needed for GoReleaser to push the Homebrew formula to `akyrey/homebrew-tap`
