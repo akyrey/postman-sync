@@ -45,6 +45,13 @@ openapi:
   # values untouched since the last sync follow the spec, edited ones are kept.
   state_dir: ".postman-sync"
 
+  # Back up the existing collection to <state_dir>/backups/<timestamp>/ before
+  # updating it. Restore with:
+  #   postman-sync import --input-dir <state_dir>/backups/<timestamp> --collections all --strategy overwrite
+  backup:
+    enabled: true
+    keep: 10                 # backups retained per collection (0 keeps all)
+
   # Doc links: append a documentation link to each request description.
   # Omit this section entirely to disable doc links.
   # doc_links:

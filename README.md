@@ -105,7 +105,9 @@ import:
 | `openapi.common_headers` | `[]` | Headers injected into every request (value and disabled state re-applied on every sync) |
 | `openapi.common_query_params` | `[]` | Query params injected into every request (value and disabled state re-applied on every sync) |
 | `openapi.import_options` | `{enableOptionalParameters: false}` | Options forwarded to Postman's OpenAPI importer; optional params/headers are generated disabled by default |
-| `openapi.state_dir` | `.postman-sync` | Local sync state: per-collection baselines used for three-way merges |
+| `openapi.state_dir` | `.postman-sync` | Local sync state: per-collection baselines used for three-way merges, and backups |
+| `openapi.backup.enabled` | `true` | Back up the existing collection before updating it. `--no-backup` disables it for one run |
+| `openapi.backup.keep` | `10` | Backups retained per collection (`0` keeps all) |
 | `openapi.preserve_request_data` | `true` | Keep header/param values, enabled state and body edits of existing requests (see merge behavior). `--no-preserve` disables it for one run |
 | `openapi.auth` | — | Collection-level authentication |
 | `openapi.auth.propagation` | — | Set to `"inherit"` to clear auth on all folders/requests so they inherit from the collection |
@@ -142,6 +144,7 @@ import:
 ./bin/postman-sync openapi-sync --config /path/to/config.yaml
 ./bin/postman-sync openapi-sync --no-preserve                      # regenerate request data from the spec
 ./bin/postman-sync openapi-sync --dry-run                          # show what would change, write nothing
+./bin/postman-sync openapi-sync --no-backup                        # skip the pre-update backup
 
 # Export collections and environments to disk
 ./bin/postman-sync export
@@ -235,6 +238,23 @@ Summary: 1 added, 1 removed, 2 modified.
 ```
 
 `+` added, `-` removed, `~` modified. Added or removed folders are reported once, with their request count. Combine with `--no-preserve` to preview a full reset.
+
+### Backups
+
+Before updating an existing collection, `openapi-sync` saves it as fetched from Postman to:
+
+```
+<state_dir>/backups/<UTC timestamp>/collections/<collection name>.json
+```
+
+The layout is the same as `export`'s, so restoring a backup is a regular import:
+
+```bash
+./bin/postman-sync import --input-dir .postman-sync/backups/20261009T150405Z \
+  --collections all --strategy overwrite
+```
+
+Only the `openapi.backup.keep` most recent backups of each collection are retained (`0` keeps all); pruning only deletes that collection's backup files and the directories they leave empty. If the backup cannot be written the sync stops before changing anything; use `--no-backup` to skip it. Dry runs never write backups.
 
 ## Multi-file OpenAPI specs
 

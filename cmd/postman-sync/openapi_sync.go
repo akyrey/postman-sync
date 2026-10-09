@@ -17,6 +17,7 @@ func newOpenAPISyncCmd() *cobra.Command {
 	var openapiRootFile string
 	var noPreserve bool
 	var dryRun bool
+	var noBackup bool
 
 	cmd := &cobra.Command{
 		Use:   "openapi-sync",
@@ -46,6 +47,9 @@ and bundled into a single document before import.`,
 			if noPreserve {
 				cfg.OpenAPI.PreserveRequestData = false
 			}
+			if noBackup {
+				cfg.OpenAPI.Backup.Enabled = false
+			}
 			if err := cfg.ValidateOpenAPISync(); err != nil {
 				return err
 			}
@@ -63,6 +67,7 @@ and bundled into a single document before import.`,
 	cmd.Flags().StringVar(&openapiRootFile, "openapi-root-file", "", "Root spec filename when --openapi-path is a directory (overrides config openapi.root_file)")
 	cmd.Flags().BoolVar(&noPreserve, "no-preserve", false, "Regenerate headers, params and bodies of existing requests from the spec, discarding edits made in Postman (overrides config openapi.preserve_request_data)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show what would change in the Postman collection without updating it (the spec is still converted through a temporary collection, which is deleted)")
+	cmd.Flags().BoolVar(&noBackup, "no-backup", false, "Do not back up the existing collection before updating it (overrides config openapi.backup.enabled)")
 	return cmd
 }
 
@@ -204,6 +209,14 @@ func updateCollection(client *postman.Client, o *config.OpenAPIConfig, id string
 		fmt.Printf("Dry run: changes that would be applied to %q (nothing was written):\n", col.Info.Name)
 		printChanges(os.Stdout, postman.DiffCollections(&current.Collection, &updated.Collection))
 		return nil
+	}
+
+	if o.Backup.Enabled {
+		path, err := backupCollection(o.StateDir, current, time.Now(), o.Backup.Keep)
+		if err != nil {
+			return fmt.Errorf("backing up collection before update (use --no-backup to skip): %w", err)
+		}
+		fmt.Printf("Backed up current collection to %q.\n", path)
 	}
 
 	if err := client.UpdateCollection(id, updated); err != nil {

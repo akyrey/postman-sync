@@ -496,3 +496,51 @@ openapi:
 		t.Fatal("expected error for empty state_dir, got nil")
 	}
 }
+
+func TestLoad_BackupDefaults(t *testing.T) {
+	path := writeTemp(t, `
+postman_api_key: "key"
+workspace_id: "ws"
+`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.OpenAPI.Backup.Enabled || cfg.OpenAPI.Backup.Keep != 10 {
+		t.Errorf("Backup = %+v, want enabled with keep 10", cfg.OpenAPI.Backup)
+	}
+}
+
+func TestLoad_BackupPartialOverrideKeepsOtherDefaults(t *testing.T) {
+	path := writeTemp(t, `
+postman_api_key: "key"
+workspace_id: "ws"
+openapi:
+  backup:
+    keep: 3
+`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.OpenAPI.Backup.Enabled || cfg.OpenAPI.Backup.Keep != 3 {
+		t.Errorf("Backup = %+v, want enabled with keep 3", cfg.OpenAPI.Backup)
+	}
+}
+
+func TestValidateOpenAPISync_NegativeBackupKeep(t *testing.T) {
+	path := writeTemp(t, `
+postman_api_key: "key"
+workspace_id: "ws"
+openapi:
+  backup:
+    keep: -1
+`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected load error: %v", err)
+	}
+	if err := cfg.ValidateOpenAPISync(); err == nil {
+		t.Fatal("expected error for negative backup.keep, got nil")
+	}
+}
